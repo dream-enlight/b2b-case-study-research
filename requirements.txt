@@ -1,0 +1,2 @@
+# Python >=3.11; standard library only. No pip packages are required.
+# Codex CLI and compatible connected Google tools are external prerequisites.

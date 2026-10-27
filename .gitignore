@@ -1,0 +1,35 @@
+# Local research and output state
+/runs/
+/backups/
+/benchmarks/
+/checks/
+/reference/
+/public-release/
+*.log
+*.tool.json
+*.response.json
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+.codex/
+credentials*.json
+client_secret*.json
+*token*.json
+# Environments and caches
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+*.tmp
+*.bak
+# Generated documents; only the blank seed belongs in source
+*.xlsx
+!assets/case_studies_seed.xlsx
+*.docx
+*.pdf
+*.zip

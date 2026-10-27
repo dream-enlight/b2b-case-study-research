@@ -1,0 +1,4 @@
+[
+  "2000-01-01T00:00:00.000000Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 2.5s)... turn_id=00000000-0000-0000-0000-000000000000 retries=1 max_retries=5 sampling_error=exceeded retry limit, last status: 429 Too Many Requests\n",
+  "2000-01-01T00:00:01.000000Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 3.5s)... turn_id=00000000-0000-0000-0000-000000000001 retries=1 max_retries=5 sampling_error=exceeded retry limit, last status: 429 Too Many Requests\n"
+]

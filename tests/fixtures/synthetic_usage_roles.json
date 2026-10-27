@@ -1,0 +1,350 @@
+{
+  "source": "Entirely fictional offline regression data. Not research evidence.",
+  "cases": [
+    {
+      "id": "a000000000000001",
+      "cells": [
+        "Example Measurement\nhttps://example.invalid/cases/a000000000000001",
+        "Example Chat",
+        "Alex Example, Team Lead, describes migration; purchasing authority unstated.",
+        "Fictional messaging software company.",
+        "Known workflow: invitation links carry codes to signup. Original buying motivation unavailable."
+      ],
+      "company_cat": "co_ffefccf8d4b4",
+      "stakeholders": [
+        {
+          "cat": "st_298f76850120",
+          "kind": "descriptive",
+          "strength": "explicit",
+          "people": [
+            "Alex Example"
+          ],
+          "involvement": "Source participation only; purchasing authority unknown.",
+          "evidence_ref": {
+            "cell": 2,
+            "start": 0,
+            "end": 76,
+            "source_sha256": "4264dcc0c79aba2fe932e874aa26072a9ba290940cbd5057fdd2f98597f4b83d"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a000000000000002",
+      "cells": [
+        "Example Measurement\nhttps://example.invalid/cases/a000000000000002",
+        "Example Game Studio",
+        "Blair Example, Co-Founder & CEO, describes automation; purchasing authority unconfirmed.",
+        "Fictional games software developer.",
+        "The company integrated Reporting Metrics API cohort ROI into internal BI. Reported processing time fell after automation. Original purchase reason unavailable."
+      ],
+      "company_cat": "co_ffefccf8d4b4",
+      "stakeholders": [
+        {
+          "cat": "st_145b329bab2d",
+          "kind": "descriptive",
+          "strength": "explicit",
+          "people": [
+            "Blair Example"
+          ],
+          "involvement": "Source participation only; purchasing authority unknown.",
+          "evidence_ref": {
+            "cell": 2,
+            "start": 0,
+            "end": 88,
+            "source_sha256": "2cdc4b81c3d5cf1e328c9b93c9463ec4747e46815a5dec4226b0d8c2c4ffd950"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a000000000000003",
+      "cells": [
+        "Example Measurement\nhttps://example.invalid/cases/a000000000000003",
+        "Example Archive",
+        "Casey Example, Marketing Production Manager, describes integration; purchasing authority unconfirmed.",
+        "Fictional archive subscription software company.",
+        "Needed actionable email-performance insights. Email routing personalized store/app CTAs and linked existing users directly to promoted features. Procurement process unavailable."
+      ],
+      "company_cat": "co_ffefccf8d4b4",
+      "stakeholders": [
+        {
+          "cat": "st_298f76850120",
+          "kind": "descriptive",
+          "strength": "explicit",
+          "people": [
+            "Casey Example"
+          ],
+          "involvement": "Source participation only; purchasing authority unknown.",
+          "evidence_ref": {
+            "cell": 2,
+            "start": 0,
+            "end": 101,
+            "source_sha256": "e156475fb70fbde1fd63403b85b04139fb3bf85d46e5a4a816037d1340f48b4d"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a000000000000004",
+      "cells": [
+        "Example Measurement\nhttps://example.invalid/cases/a000000000000004",
+        "Example Careers",
+        "Drew Example is named; title and purchasing authority unavailable.",
+        "Company activity unavailable in supplied evidence.",
+        "Uses Example Measurement for attribution and acquisition across paid and organic channels. Original trigger and selection requirements unavailable."
+      ],
+      "company_cat": "co_6b889bfd4b48",
+      "stakeholders": [
+        {
+          "cat": "st_c8077004f330",
+          "kind": "uncertain",
+          "strength": "unclear",
+          "people": [
+            "Drew Example"
+          ],
+          "involvement": "Source participation only; purchasing authority unknown.",
+          "evidence_ref": {
+            "cell": 2,
+            "start": 0,
+            "end": 0,
+            "source_sha256": "5de5955156ffc45e9fe1c24b7588ca44c375a9397ce458f7889ea2131a23670c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a000000000000005",
+      "cells": [
+        "Example Measurement\nhttps://example.invalid/cases/a000000000000005",
+        "Example Connectivity",
+        "Emery Example, UA Manager, explains selection and implementation; purchasing authority unconfirmed.",
+        "Fictional connectivity software company.",
+        "Required reliable, scalable, cost-efficient cross-platform links integrated with attribution."
+      ],
+      "company_cat": "co_ffefccf8d4b4",
+      "stakeholders": [
+        {
+          "cat": "st_0e2c6a4a3be5",
+          "kind": "descriptive",
+          "strength": "explicit",
+          "people": [
+            "Emery Example"
+          ],
+          "involvement": "Source participation only; purchasing authority unknown.",
+          "evidence_ref": {
+            "cell": 2,
+            "start": 0,
+            "end": 99,
+            "source_sha256": "f7d909ee306851e0534fb23cd31b479a0f5f351a0d178edc943161b6357113e4"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a000000000000006",
+      "cells": [
+        "Example Measurement\nhttps://example.invalid/cases/a000000000000006",
+        "Example Music App",
+        "Finley Example, CMO, explains agency selection; vendor purchasing authority unconfirmed.",
+        "Fictional music-learning software company.",
+        "Describes agency evaluation. Original software purchase reason unknown."
+      ],
+      "company_cat": "co_ffefccf8d4b4",
+      "stakeholders": [
+        {
+          "cat": "st_0e2c6a4a3be5",
+          "kind": "descriptive",
+          "strength": "explicit",
+          "people": [
+            "Finley Example"
+          ],
+          "involvement": "Source participation only; purchasing authority unknown.",
+          "evidence_ref": {
+            "cell": 2,
+            "start": 0,
+            "end": 88,
+            "source_sha256": "9f46139da17679d732a38b059d2d634b2a7a918b98335e212110c5d99ec8eb41"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a000000000000007",
+      "cells": [
+        "Example Measurement\nhttps://example.invalid/cases/a000000000000007",
+        "Example Delivery",
+        "Gray Example, Head of Growth\u2013Prime Product Lead, describes results; purchasing authority unstated.",
+        "Fictional delivery software company.",
+        "Describes referral workflow; original selection motivation unknown."
+      ],
+      "company_cat": "co_ffefccf8d4b4",
+      "stakeholders": [
+        {
+          "cat": "st_298f76850120",
+          "kind": "descriptive",
+          "strength": "explicit",
+          "people": [
+            "Gray Example"
+          ],
+          "involvement": "Source participation only; purchasing authority unknown.",
+          "evidence_ref": {
+            "cell": 2,
+            "start": 0,
+            "end": 98,
+            "source_sha256": "9334ff00c14734034b9d8b3f4254badfdd4e115b162fd48add63bb8ae8804b0c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "a000000000000008",
+      "cells": [
+        "Example Measurement\nhttps://example.invalid/cases/a000000000000008",
+        "Example Retailer",
+        "Harper Example discusses implementation; title and purchasing authority unstated.",
+        "Fictional retail software company.",
+        "Describes documented use; original purchase reason unknown."
+      ],
+      "company_cat": "co_ffefccf8d4b4",
+      "stakeholders": [
+        {
+          "cat": "st_c8077004f330",
+          "kind": "uncertain",
+          "strength": "unclear",
+          "people": [
+            "Harper Example"
+          ],
+          "involvement": "Source participation only; purchasing authority unknown.",
+          "evidence_ref": {
+            "cell": 2,
+            "start": 0,
+            "end": 0,
+            "source_sha256": "12a7ac47d883fc8e2ffff853371a58da7e8a0fa373c55d80faf21962d157d782"
+          }
+        }
+      ]
+    }
+  ],
+  "categories": {
+    "bu_d6ef918e35b7": {
+      "dimension": "buying_situations",
+      "name": "Other",
+      "definition": "Synthetic test category: Other.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "bu_5600faf29470": {
+      "dimension": "buying_situations",
+      "name": "Unknown / insufficient evidence",
+      "definition": "Synthetic test category: Unknown / insufficient evidence.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "se_e7a45a42e27a": {
+      "dimension": "selection_requirements",
+      "name": "Other",
+      "definition": "Synthetic test category: Other.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "se_f42a8069f1c2": {
+      "dimension": "selection_requirements",
+      "name": "Unknown / insufficient evidence",
+      "definition": "Synthetic test category: Unknown / insufficient evidence.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "co_0784d3d9e332": {
+      "dimension": "company_category",
+      "name": "Other",
+      "definition": "Synthetic test category: Other.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "co_6b889bfd4b48": {
+      "dimension": "company_category",
+      "name": "Unknown / insufficient evidence",
+      "definition": "Synthetic test category: Unknown / insufficient evidence.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "co_72e228b27d69": {
+      "dimension": "company_characteristics",
+      "name": "Other",
+      "definition": "Synthetic test category: Other.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "co_e87db088cd6a": {
+      "dimension": "company_characteristics",
+      "name": "Unknown / insufficient evidence",
+      "definition": "Synthetic test category: Unknown / insufficient evidence.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "st_e6c036d495aa": {
+      "dimension": "stakeholders",
+      "name": "Other",
+      "definition": "Synthetic test category: Other.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "st_c8077004f330": {
+      "dimension": "stakeholders",
+      "name": "Unknown / insufficient evidence",
+      "definition": "Synthetic test category: Unknown / insufficient evidence.",
+      "kind": "uncertain",
+      "origin": "fallback"
+    },
+    "se_1643f8b3888b": {
+      "dimension": "selection_requirements",
+      "name": "Reliable contextual app routing",
+      "definition": "Synthetic test category: Reliable contextual app routing.",
+      "kind": "requirement",
+      "origin": "global"
+    },
+    "se_9bc28e8800f4": {
+      "dimension": "selection_requirements",
+      "name": "Open data and stack interoperability",
+      "definition": "Synthetic test category: Open data and stack interoperability.",
+      "kind": "requirement",
+      "origin": "global"
+    },
+    "se_aaf80e85f214": {
+      "dimension": "selection_requirements",
+      "name": "Trustworthy unified attribution",
+      "definition": "Synthetic test category: Trustworthy unified attribution.",
+      "kind": "requirement",
+      "origin": "global"
+    },
+    "st_298f76850120": {
+      "dimension": "stakeholders",
+      "name": "Marketing and growth practitioners",
+      "definition": "Synthetic test category: Marketing and growth practitioners.",
+      "kind": "descriptive",
+      "origin": "global"
+    },
+    "st_0e2c6a4a3be5": {
+      "dimension": "stakeholders",
+      "name": "Explicit evaluation and selection participation",
+      "definition": "Synthetic test category: Explicit evaluation and selection participation.",
+      "kind": "descriptive",
+      "origin": "global"
+    },
+    "st_145b329bab2d": {
+      "dimension": "stakeholders",
+      "name": "Founders, executives and creator operators",
+      "definition": "Synthetic test category: Founders, executives and creator operators.",
+      "kind": "descriptive",
+      "origin": "global"
+    },
+    "co_ffefccf8d4b4": {
+      "dimension": "company_category",
+      "name": "Synthetic software businesses",
+      "definition": "Synthetic test category: Synthetic software businesses.",
+      "kind": "descriptive",
+      "origin": "global"
+    }
+  }
+}
