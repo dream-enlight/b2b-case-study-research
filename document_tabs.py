@@ -32,8 +32,18 @@ def tables(tab):
     return [[[text(c).strip() for c in r['tableCells']] for r in e['table']['tableRows']]
             for e in body(tab).get('content',[]) if 'table' in e]
 
+def display_sections(state,source):
+    if not state.get('workspace_policy',{}).get('overview_presentation'):return source
+    return [source[0].replace('# Overview','# '+state['company']+' | Working ICP',1)]+source[1:]
+
 def matches(tab,markdown):
     _,_,source_tables=native.parse_markdown(markdown)
+    bullets=[native.inline(re.sub(r'^[-*]\s+','',line.strip())) for line in markdown.splitlines() if re.match(r'^[-*]\s+',line.strip())]
+    actual_bullets=[text(e['paragraph']).strip() for e in body(tab).get('content',[]) if 'bullet' in e.get('paragraph',{})]
+    if bullets and list(map(compact,actual_bullets))!=list(map(compact,bullets)):return False
+    if markdown.splitlines()[0].endswith(' | Working ICP'):
+        first=next((e['paragraph'] for e in body(tab).get('content',[]) if 'paragraph' in e),{})
+        if first.get('paragraphStyle',{}).get('namedStyleType')!='TITLE':return False
     return (compact(text(body(tab)))==compact(expected(markdown)) and
             [[list(map(compact,row)) for row in t] for t in tables(tab)]==
             [[list(map(compact,row)) for row in t['rows']] for t in source_tables])
@@ -73,7 +83,8 @@ def organize(base,state,data,atomic_json):
     if len(tabs)!=5 or [title(t) for t in tabs[1:]]!=TITLES[1:]:
         raise ws.WorkspaceError('Unexpected native tab names/order; no duplicate tabs will be created.')
     details=tabs[1:]
-    if all(matches(t,s) for t,s in zip(tabs,source)) and [title(t) for t in tabs]==TITLES:
+    displayed=display_sections(state,source)
+    if all(matches(t,s) for t,s in zip(tabs,displayed)) and [title(t) for t in tabs]==TITLES:
         state['native_doc_tabs']={'version':1,'source_sha256':ws.digest(source),'tab_ids':[tid(t) for t in tabs],'titles':TITLES}
         state['document_verified']=True;state['phase']='complete'
         return True
@@ -100,6 +111,10 @@ def organize(base,state,data,atomic_json):
             {'updateParagraphStyle':{'range':{'tabId':root,'startIndex':1,'endIndex':boundary},'paragraphStyle':{'pageBreakBefore':False,'keepWithNext':False,'spaceAbove':{'magnitude':0,'unit':'PT'},'spaceBelow':{'magnitude':6,'unit':'PT'},'lineSpacing':110},'fields':'pageBreakBefore,keepWithNext,spaceAbove,spaceBelow,lineSpacing'}},
             {'updateParagraphStyle':{'range':{'tabId':root,'startIndex':heading['startIndex'],'endIndex':heading['endIndex']-1},'paragraphStyle':{'namedStyleType':'TITLE','keepWithNext':True},'fields':'namedStyleType,keepWithNext'}},
             {'updateTextStyle':{'range':{'tabId':root,'startIndex':heading['startIndex'],'endIndex':heading['endIndex']-1},'textStyle':{'fontSize':{'magnitude':22,'unit':'PT'}},'fields':'fontSize'}}]
+        if displayed!=source:
+            start=heading['startIndex'];end=heading['endIndex']-1
+            requests += [{'deleteContentRange':{'range':{'tabId':root,'startIndex':start,'endIndex':end}}},
+                {'insertText':{'location':{'tabId':root,'index':start},'text':state['company']+' | Working ICP'}}]
         return ws.request(base,state,'doc_tabs_finish','batch_update_document',dict(doc,requests=requests),{},atomic_json)
     # Recover an acknowledged or uncertain scaffold write without repeating it.
     requests=[]
@@ -137,6 +152,7 @@ def revise(base,state,markdown,data,atomic_json):
 
 def edit_readback(base,state,data,atomic_json):
     source=load(base,state);native_tabs=data.get('tabs',[])
+    if state.get('recovered_publication'):source=display_sections(state,source)
     if data.get('documentId')!=state['workspace_document']['id'] or not data.get('revisionId') or [title(t) for t in native_tabs]!=TITLES:
         raise ws.WorkspaceError('Editorial native tabs or revision differ from the expected document.')
     if all(matches(t,s) for t,s in zip(native_tabs,source)):

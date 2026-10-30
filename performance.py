@@ -3,6 +3,26 @@ import collections
 import datetime
 import json
 from pathlib import Path
+from urllib.parse import urlsplit,urlunsplit
+
+
+def source_attempts(item):
+    """Actual CLI formats: one attempt per distinct source represented in a call.
+
+    Batched opens sometimes serialize as other (or under the first search).
+    View results identify those sources; ordinary search snippets are not reads.
+    Multiple windows of one source in a single call count once.
+    """
+    if item.get('type')!='web_search':return []
+    action=item.get('action',{});kind=action.get('type')
+    urls=[r['url'] for r in item.get('results',[]) if r.get('url') and
+          ('Total lines:' in r.get('snippet','') or 'view' in r.get('ref_id','') and kind!='search')]
+    if not urls and kind in ('open','open_page','click','find','find_in_page','other'):
+        urls=action.get('urls') or [action.get('url') or action.get('ref_id') or 'unresolved-source-reference']
+    def normalize(url):
+        p=urlsplit(str(url))
+        return urlunsplit((p.scheme.lower(),p.netloc.lower(),p.path.rstrip('/') or '/',p.query,'')) if p.netloc else str(url)
+    return list(dict.fromkeys(normalize(u) for u in urls))
 
 
 def event(base,stage,kind,**values):
@@ -12,7 +32,7 @@ def event(base,stage,kind,**values):
         out.write(json.dumps(row,ensure_ascii=False)+'\n')
 
 
-def worker(base,stage,key,elapsed,stdout,failed):
+def worker(base,stage,key,elapsed,stdout,failed,*,artifact=None):
     usage={};attempts=[];checkpoints=0
     for line in stdout.splitlines():
         try:e=json.loads(line)
@@ -20,13 +40,9 @@ def worker(base,stage,key,elapsed,stdout,failed):
         if e.get('type')=='turn.completed':usage=e.get('usage',{})
         if e.get('type')!='item.completed':continue
         item=e.get('item',{})
-        if item.get('type')=='web_search':
-            action=item.get('action',{})
-            if action.get('type') in ('open','click','find'):
-                urls=action.get('urls') or [action.get('url') or action.get('ref_id') or 'unresolved-source-reference']
-                attempts.extend(str(u) for u in urls)
+        attempts.extend(source_attempts(item))
         if item.get('type')=='mcp_tool_call' and item.get('tool')=='save_records':checkpoints+=1
-    event(base,stage,'execution',key=key,elapsed_seconds=round(elapsed,3),failed=failed,
+    event(base,stage,'execution',key=key,artifact=artifact,elapsed_seconds=round(elapsed,3),failed=failed,
           input_tokens=usage.get('input_tokens'),cached_input_tokens=usage.get('cached_input_tokens'),
           output_tokens=usage.get('output_tokens'),source_attempts=attempts,checkpoint_calls=checkpoints)
 

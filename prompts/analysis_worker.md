@@ -10,7 +10,7 @@ The final records array may repeat identical emitted records. Every assigned id
 must be accounted for. No other ids. Preserve all useful distinct observations.
 
 Use evidence-grounded, concise emergent labels and definitions, not predefined
-example-project categories. Each observation has an exact, short quote from its appropriate
+predefined categories. Each observation has an exact, short quote from its appropriate
 Sheet row (use the relevant cell wherever extraction placed the evidence), an evidence_strength
 (explicit, supported, outcome_only, unclear), people (named customer individuals
 only; otherwise []), and involvement (documented role or empty string).

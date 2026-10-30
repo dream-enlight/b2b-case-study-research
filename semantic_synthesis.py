@@ -315,6 +315,7 @@ def report_context(db, agg, target=None):
             'providers':dict(providers), 'global_hierarchy':dims,'global_evidence_cautions':agg.get('review_notes',{}),
             'stakeholder_coverage':report_roles.coverage(roles),'buying_evidence_coverage':agg.get('buying_evidence_coverage',{}),
             'functional_role_frequencies':functional}
+    if db.get('screening_summary'):context['collection_coverage']=db['screening_summary']
     if agg.get('selection_evidence_kinds'):context['selection_evidence_kinds']=True
     return context
 

@@ -2,7 +2,7 @@ Using only the finalized Google Sheet case-study database, analyze the buying si
 
 **Analysis:**
 
-1. Identify and group recurring buying situations based on the problems, business needs and purchase triggers documented in the database. Let the categories emerge from the evidence rather than imposing predefined categories from an example project.
+1. Identify and group recurring buying situations based on the problems, business needs and purchase triggers documented in the database. Let the categories emerge from the evidence rather than imposing predefined categories from the reference example.
 2. Write a concise summary explaining the strongest recurring buying pattern.
 3. Produce a frequency table covering all identified buying-situation categories, ordered from most to least frequent. For each category, include:
    - Buying-situation name
@@ -22,7 +22,7 @@ Using only the finalized Google Sheet case-study database, analyze the buying si
 - Count only situations supported by the database. Missing information does not establish that a situation was absent.
 - Preserve meaningful distinctions between buying situations rather than grouping everything into broad generic categories.
 
-Use the public output contract in docs/output_contract.md for analytical depth, presentation and frequency methodology.
+Follow docs/output_contract.md for analytical depth, presentation and frequency methodology.
 
 Save this analysis as a separate completed output for the final Google Doc. Do not modify the source database or begin the company-profile or people analysis.
 

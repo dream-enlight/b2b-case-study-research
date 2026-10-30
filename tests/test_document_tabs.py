@@ -46,7 +46,7 @@ class DocumentTabTests(unittest.TestCase):
                 level=0
                 if pending_headings and line==pending_headings[0]['text']:
                     level=pending_headings.pop(0)['level']
-                style={'namedStyleType':'HEADING_'+str(level) if level else 'NORMAL_TEXT','pageBreakBefore':level==1 and line!='Overview'}
+                style={'namedStyleType':'TITLE' if line.endswith(' | Working ICP') else 'HEADING_'+str(level) if level else 'NORMAL_TEXT','pageBreakBefore':level==1 and line!='Overview'}
                 end=index+native.u16(line+'\n');content.append({'startIndex':index,'endIndex':end,'paragraph':{
                     'paragraphStyle':style,'elements':[{'textRun':{'content':line+'\n'}}]}});index=end
         content.append({'startIndex':index,'endIndex':index+1,'paragraph':{'elements':[{'textRun':{'content':'\n'}}]}})

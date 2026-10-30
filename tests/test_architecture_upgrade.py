@@ -165,7 +165,7 @@ class ArchitectureTests(unittest.TestCase):
         self.assertEqual(state['workspace_pending']['kind'],'sheet_preflight')
 
     def test_actual_source_bytes_bound_assignment_without_truncating(self):
-        cases=[{'id':str(n),'url':'https://example.com/'+str(n)} for n in range(3)]
+        cases=[{'id':str(n),'provider':'Vendor','url':'https://example.com/'+str(n)} for n in range(3)]
         for c in cases:research.remember(self.base,runner.atomic_json,capture={'url':c['url'],'coverage':'full_text','text':'x'*15000})
         settings=dict(research.POLICY,max_context_bytes=45000)
         self.assertEqual(len(research.assignment_cases(self.base,cases,settings)),2)
@@ -208,7 +208,7 @@ class OfflineEndToEnd(unittest.TestCase):
             sections=document_tabs.sections(markdown)
             stage=getattr(self,'native_stage','')
             tab=lambda md,name,tid,scaffold=False:DocumentTabTests.tab(self,md,name,tid,scaffold)
-            root=tab(sections[0] if stage=='doc_tabs_finish' else markdown,
+            root=tab(document_tabs.display_sections(self.state(rid),sections)[0] if stage=='doc_tabs_finish' else markdown,
                      'Overview' if stage=='doc_tabs_finish' else 'Tab 1','t.0')
             details=[tab('' if stage=='doc_tabs_add' else section,name,'t.'+str(i),
                          scaffold=stage=='doc_tabs_write')
@@ -227,7 +227,8 @@ class OfflineEndToEnd(unittest.TestCase):
         s=self.pump(env=env);self.assertEqual(s['phase'],'complete',s.get('pause_reason'))
         assignments=self.traced_assignments(trace)
         reviews=[x for x in assignments if x.get('task')=='review_batch']
-        self.assertEqual(sum(len(x['review_cases']) for x in reviews),3)
+        self.assertEqual(sum(len(x['review_cases']) for x in reviews),6)
+        self.assertEqual(len({c['id'] for x in reviews for c in x['review_cases']}),6)
         deep_urls={c['url'] for x in reviews for c in x['review_cases']}
         extractions=[x for x in assignments if x.get('task')=='extract_batch']
         self.assertTrue(all(c['url'] not in deep_urls for x in extractions for c in x['assigned_cases']))
@@ -240,14 +241,19 @@ class OfflineEndToEnd(unittest.TestCase):
         self.assertIn(tf.OTHER,[x['name'] for x in agg['dimensions']['selection_requirements']])
         self.assertIn(tf.UNKNOWN,[x['name'] for x in agg['dimensions']['company_characteristics']])
         self.assertEqual(performance.summary(runner.run_dir('test-company'))['1']['human_interventions'],1)
-    def test_100_metadata_candidates_do_not_launch_100_deep_reads(self):
+    def test_first_thirty_metadata_entries_bound_new_runs_without_deep_reads(self):
         env={'FAKE_CASES':'100'}
         self.cmd('app','Research Test Company — https://example.com','--codex',legacy.FAKE,env=env)
         self.cmd('app','Approve these competitors: Beta Software','--codex',legacy.FAKE,'--max-tasks','1',env=env)
         base=runner.run_dir('test-company');s=self.state();ledger=runner.read_json(runner.screening_path(base))
-        self.assertEqual(len(ledger),100);self.assertEqual(s['research_policy']['review_batch_size'],20)
+        self.assertEqual(len(ledger),30);self.assertEqual(s['research_policy']['review_batch_size'],20)
         self.assertFalse((base/'extracted.json').exists());self.assertFalse((base/'research/batches').exists())
         self.assertEqual(runner.coverage_plan(base,s)['action'],'discover')
+        self.cmd('run','test-company','--codex',legacy.FAKE,'--max-tasks','1',env=env)
+        s=self.state();ledger=runner.read_json(runner.screening_path(base))
+        self.assertEqual(len(ledger),60)
+        self.assertTrue(all(len(u['entries'])==30 and u['complete'] for u in s['listing_universes'].values()))
+        self.assertFalse((base/'extracted.json').exists())
     def test_source_budget_yields_completed_prefix_without_quota_retry(self):
         self.cmd('init','--company','Test Company','--website','https://example.com')
         base=runner.run_dir('test-company');s=self.state();s.update(phase='stage2',approved_providers=['Test Company']);s['research_policy']['max_source_attempts']=1;runner.save(base,s)

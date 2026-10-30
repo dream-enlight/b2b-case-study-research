@@ -309,17 +309,29 @@ def get_schema(stage, review=False):
     return obj({'markdown':s},['markdown'])
 
 
-def efficient_schema(task,review_limit=research.POLICY['review_batch_size'],discovery_limit=research.POLICY['discovery_batch_size']):
-    if task=='extract_batch':return get_schema(3)
+def efficient_schema(task,review_limit=research.POLICY['review_batch_size'],discovery_limit=research.POLICY['discovery_batch_size'],listing=False):
+    if task=='extract_batch':
+        schema=get_schema(3);schema['properties']['completed_ids']={'type':'array','items':{'type':'string'}}
+        schema['required'].append('completed_ids')
+        return schema
     record=get_schema(3)['properties']['records']['items']
     review=copy.deepcopy(get_schema(2,review=True));review['properties']['id']={'type':'string'};review['required'].append('id')
     review['properties']['contribution']={'type':'string'};review['required'].append('contribution')
     if task=='review_batch':
-        return {'type':'object','properties':{'results':{'type':'array','maxItems':review_limit,'items':review}},'required':['results'],'additionalProperties':False}
+        return {'type':'object','properties':{'results':{'type':'array','maxItems':review_limit,'items':review},'completed_ids':{'type':'array','items':{'type':'string'}}},'required':['results','completed_ids'],'additionalProperties':False}
     schema=copy.deepcopy(get_schema(2));schema['properties']['cases']['maxItems']=discovery_limit;row=schema['properties']['cases']['items']
     row['properties']['decision']['enum'].append('unresolved')
     row['properties'].update(record={'anyOf':[record,{'type':'null'}]},reading_depth={'type':'string','enum':['lightweight','substantive']},contribution={'type':'string'})
     row['required']+=['record','reading_depth','contribution']
+    schema['properties']['completed_ids']={'type':'array','items':{'type':'string'}}
+    schema['required'].append('completed_ids')
+    if listing:
+        row['properties']['url']={'anyOf':[{'type':'string'},{'type':'null'}]}
+        row['properties']['url_status']={'type':'string','enum':['resolved','unresolved','content_confirmed']}
+        row['properties'].update(listing_position={'type':'integer','minimum':1,'maximum':30},listing_url={'type':'string'})
+        row['required']+=['listing_position','listing_url','url_status']
+        schema['properties'].update(order_verified={'type':'boolean'},listing_exhausted={'type':'boolean'})
+        schema['required']+=['order_verified','listing_exhausted']
     return schema
 
 
@@ -356,12 +368,20 @@ def prompt_for(stage, ctx):
             'TASK ASSIGNMENT (machine generated):\n'+json.dumps(ctx,ensure_ascii=False),
             'RUNNER EXECUTION OVERRIDE: Use only supplied finalized Sheet evidence. '+('Use ONLY analysis_checkpoint.save_records for incremental persistence, then return the final JSON receipt.' if ctx['analysis_task']=='classify_compact' else 'No tools or other files. Return JSON only.')])
     if ctx.get('efficient_worker'):
-        task=ctx['task'];schema=efficient_schema(task,ctx.get('review_batch_size',research.POLICY['review_batch_size']),ctx.get('max_cases',research.POLICY['discovery_batch_size']))
-        return '\n\n'.join([(ROOT/'prompts/research_worker.md').read_text(),
-            ('Stage 3 response JSON schema:' if task=='extract_batch' else 'Stage 2 batch review response JSON schema:' if task=='review_batch' else 'Stage 2 response JSON schema:')+'\n'+json.dumps(schema),
-            'TASK ASSIGNMENT (machine generated):\n'+json.dumps(ctx,ensure_ascii=False),
-            'RUNNER EXECUTION OVERRIDE: JSON evidence work only. Do not open local files, Refold artifacts, skill documents, project material, browsers, shell, or Workspace apps. The supplied quality contract replaces reference inspection. '+
-            'ONE access attempt per PDF; saved failures must not be retried. No alternate copies, downloads, rendering, OCR or summary rescue after failure.'])
+        task=ctx['task']
+        files=['research_worker.md']
+        if task=='discover':
+            files.append('research_resolution.md' if ctx.get('url_recovery') else 'research_listing.md' if ctx.get('first_listing_entries') else 'research_discovery_legacy.md')
+            if ctx.get('listing_only'):files.append('research_listing_only.md')
+        else:files.append('research_review.md' if task=='review_batch' else 'research_extract.md')
+        if not ctx.get('listing_only'):files.append('research_record.md')
+        files.append('research_checkpoints.md')
+        label='Stage 3 response JSON schema:' if task=='extract_batch' else 'Stage 2 batch review response JSON schema:' if task=='review_batch' else 'Stage 2 response JSON schema:'
+        checkpoint_key={'discover':'discovered_case','review_batch':'case_result','extract_batch':'extracted_record'}[task]
+        return '\n\n'.join([(ROOT/'prompts'/name).read_text().replace('CHECKPOINT_KEY',checkpoint_key) for name in files]+[
+            label+' supplied through --output-schema; its row fields also define checkpoint rows.',
+            'TASK ASSIGNMENT (machine generated):\n'+json.dumps(research.model_context(ctx),ensure_ascii=False),
+            'RUNNER EXECUTION OVERRIDE: Emit JSON evidence checkpoints as commentary; return the final JSON receipt matching the supplied schema.'])
     method=(ROOT/'prompts'/PROMPTS[stage]).read_text(encoding='utf-8')
     output = [
         'Stage 1 response JSON schema: {"product_understanding":{"summary":"evidence-grounded product description","core_workflow":"what the product enables","capabilities":[{"name":"capability","description":"supported behavior","sources":["https://..."]}],"sources":["https://..."],"uncertainties":["unresolved product questions"]},"competitors":[{"name":"...","product":"specific competing product/business line","reason":"explain overlap with the researched target capabilities","sources":["https://..."],"confidence":"confirmed or uncertain"}]}. Do not establish an ICP, buying situations, or stakeholders. No case-study discovery.',
@@ -421,7 +441,7 @@ def codex_call(base, state, stage, task_name, context, timeout, codex_binary):
     efficient=bool(state.get('research_policy') and stage in (2,3) and context.get('task')!='reconcile_cases')
     if efficient:
         if stage==3:context=dict(context,task='extract_batch')
-        context=dict(context,efficient_worker=True,evidence_memory=research.context(base,context.get('review_cases',context.get('assigned_cases',[])),context.get('approved_provider','')))
+        context=dict(context,efficient_worker=True,evidence_memory=research.assignment_memory(base,context))
     evidence_only=stage>=4 or context.get('task')=='reconcile_cases'
     logs=base/'logs'; logs.mkdir(exist_ok=True)
     safe=re.sub('[^a-zA-Z0-9_-]','_',task_name)
@@ -433,13 +453,24 @@ def codex_call(base, state, stage, task_name, context, timeout, codex_binary):
     if efficient:
         settings=dict(research.POLICY,**state['research_policy'])
         timeout=min(timeout,settings['max_execution_seconds'])
-        context=dict(context,review_batch_size=settings['review_batch_size'],work_budgets={k:settings[k] for k in ('max_source_attempts','max_execution_seconds','max_context_bytes')})
-        if len(json.dumps(context,ensure_ascii=False).encode())>settings['max_context_bytes']:
+        context=dict(context,review_batch_size=settings['review_batch_size'],compact_receipts=bool(settings.get('first_listing_entries')),work_budgets={k:settings[k] for k in ('max_source_attempts','max_execution_seconds','max_context_bytes')})
+        if len(json.dumps(research.model_context(context),ensure_ascii=False).encode())>settings['max_context_bytes']:
             raise RunError('Research assignment exceeds context budget; saved sources were not truncated. Configure a larger budget or a documented smaller review batch.','validation')
-    atomic_json(schema_file,analysis_pipeline.schema(context['analysis_task']) if context.get('analysis_task') else efficient_schema(context['task'],context['review_batch_size'],context.get('max_cases',research.POLICY['discovery_batch_size'])) if efficient else reconciliation_schema() if context.get('task')=='reconcile_cases' else get_schema(stage,review=context.get('task')=='review_case'))
+    atomic_json(schema_file,analysis_pipeline.schema(context['analysis_task']) if context.get('analysis_task') else efficient_schema(context['task'],context['review_batch_size'],context.get('max_cases',research.POLICY['discovery_batch_size']),bool(context.get('first_listing_entries'))) if efficient else reconciliation_schema() if context.get('task')=='reconcile_cases' else get_schema(stage,review=context.get('task')=='review_case'))
     task_prompt=prompt_for(stage,context)
     # Keep per-run logs and prompts for failure investigations, without appending them to the next task context.
     atomic_text(logs/f'{safe}_{suffix}.prompt.txt',task_prompt)
+    execution_path=logs/f'{safe}_{suffix}.execution.json'
+    replay_fields=('target','task','approved_provider','competing_product','competing_products','review_cases',
+                   'assigned_cases','first_listing_entries','listing_contract_v2','listing_only','url_recovery',
+                   'ordinary_resolution','recovery_slots','max_cases','page','cursor','compact_receipts','research_scope')
+    execution={'key':task_name,'stage':stage,'attempt':state['jobs'].get(task_name,{}).get('attempts'),'dataset_revision':state.get('dataset_revision'),
+               'started_at':utc(),'initial_prompt_bytes':len(task_prompt.encode()),'status':'started',
+               'assignment':{k:context[k] for k in replay_fields if k in context},
+               'events':events_file.name,'raw_output':output_file.name,'stderr':stderr_file.name}
+    atomic_json(execution_path,execution)
+    if task_name in state['jobs']:
+        state['jobs'][task_name]['last_execution']=str(execution_path.relative_to(base));save(base,state)
     cmd=[codex_binary,'exec','--json','--sandbox','read-only',
          '--skip-git-repo-check','--output-schema',str(schema_file),
          '--output-last-message',str(output_file)]
@@ -507,17 +538,26 @@ def codex_call(base, state, stage, task_name, context, timeout, codex_binary):
                                             [r['id'] for r in context['records']],message['analysis_record'],atomic_json)
                             if efficient and ev.get('type')=='item.completed':
                                 if ev.get('item',{}).get('type')=='web_search':
-                                    action=ev['item'].get('action',{})
-                                    if action.get('type') in ('open','click','find'):
-                                        urls=action.get('urls') or [action.get('url','')]
-                                        failures=context['evidence_memory']['known_access_failures']
-                                        if any(u in failures for u in urls):raise RunError('Worker reopened a recorded failed source; output rejected.','validation')
-                                        source_attempts+=max(1,len(action.get('urls',[])))
-                                        if source_attempts>settings['max_source_attempts']:
-                                            raise RunError('Source attempt budget reached; completed receipts retained and unfinished cases remain pending.','budget')
+                                    item=ev['item'];action=item.get('action',{});urls=performance.source_attempts(item)
+                                    failures=research.failed_sources(base) # full runtime guard, independent of model-facing scope
+                                    tested=urls+(action.get('urls') or [action.get('url','')])
+                                    if context.get('recovery_only'):
+                                        allowed={research.canonical(u) for u in context['allowed_source_urls']}
+                                        if action.get('type')=='search' or any(u and u.startswith(('https://','http://')) and research.canonical(u) not in allowed for u in tested):
+                                            raise RunError('Bounded recovery attempted an unassigned source or discovery.','validation')
+                                    if context.get('listing_only'):
+                                        forbidden={research.canonical(u) for u in context.get('known_case_urls',[])}
+                                        forbidden.update(research.canonical(c['url']) for c in state.get('listing_universes',{}).get(context['approved_provider'],{}).get('entries',[]) if c.get('url'))
+                                        if any(u and u.startswith(('https://','http://')) and research.canonical(u) in forbidden for u in tested):
+                                            raise RunError('Listing-only recovery attempted a case source; stopped without deep extraction.','validation')
+                                    if any(u and u.startswith(('https://','http://')) and research.canonical(u) in failures for u in tested):
+                                        raise RunError('Worker reopened a recorded failed source; output rejected.','validation')
+                                    source_attempts+=len(urls)
                                 research.remember(base,atomic_json,event=ev,provider=context.get('approved_provider',''),origin=events_file.name)
                                 if ev.get('item',{}).get('type')=='web_search':
-                                    context['evidence_memory']['known_access_failures'].update(research.failed_sources(base))
+                                    context['evidence_memory']['known_access_failures'].update({u:r for u,r in research.failed_sources(base).items() if u in tested})
+                                    if urls and source_attempts>=settings['max_source_attempts']:
+                                        raise RunError('Source attempt budget reached; completed receipts retained and unfinished cases remain pending.','budget')
                                 item=ev.get('item',{})
                                 if item.get('type')=='agent_message':
                                     for message in checkpoint_messages(item.get('text','')):
@@ -530,13 +570,13 @@ def codex_call(base, state, stage, task_name, context, timeout, codex_binary):
                                 raise limit_error(msg) or RunError(msg,'configuration')
         proc.wait(timeout=max(.1,deadline-time.monotonic()))
     except RunError as exc:
-        if efficient and context['task'] in ('review_batch','extract_batch') and exc.kind in ('budget','timeout'):
+        if efficient and (context['task'] in ('review_batch','extract_batch') or context.get('first_listing_entries')) and exc.kind in ('budget','timeout'):
             budget_stop=exc
         else:raise
     except (KeyboardInterrupt,subprocess.TimeoutExpired):
         raise RunError('Codex execution interrupted; completed checkpoints retained. Resume explicitly.','timeout')
     finally:
-        performance.worker(base,stage,task_name,time.monotonic()-execution_started,chunks['stdout'].decode(errors='replace'),sys.exc_info()[0] is not None or proc.poll() not in (None,0))
+        failure=sys.exc_info()[1] or budget_stop
         if proc.poll() is None:
             # A final error event may arrive just before normal process exit.
             # Reap that exit before signalling a disappearing process group.
@@ -545,10 +585,37 @@ def codex_call(base, state, stage, task_name, context, timeout, codex_binary):
                 try:os.killpg(proc.pid,signal.SIGKILL)
                 except ProcessLookupError:pass
                 proc.wait()
+        # Preserve bytes already produced after a local handler failed, even if
+        # they had not yet been consumed by the event loop. Never execute again
+        # merely to recreate that buffered evidence.
+        for stream,name,path in ((proc.stdout,'stdout',events_file),(proc.stderr,'stderr',stderr_file)):
+            os.set_blocking(stream.fileno(),False)
+            with path.open('ab') as saved:
+                while True:
+                    try:chunk=os.read(stream.fileno(),65536)
+                    except BlockingIOError:break
+                    if not chunk:break
+                    saved.write(chunk);chunks[name].extend(chunk)
+        elapsed=time.monotonic()-execution_started
+        performance.worker(base,stage,task_name,elapsed,chunks['stdout'].decode(errors='replace'),
+                           failure is not None or proc.returncode!=0,artifact=events_file.name)
+        execution.update(status='raw_saved',elapsed_seconds=round(elapsed,3),returncode=proc.returncode,
+                         artifacts={p.name:hashlib.sha256(p.read_bytes()).hexdigest()
+                                    for p in (events_file,stderr_file,output_file) if p.exists()})
+        if failure:execution['failure']={'type':type(failure).__name__,'message':str(failure),
+                                        'kind':getattr(failure,'kind','validation')}
+        atomic_json(execution_path,execution)
         proc.stdout.close();proc.stderr.close()
         if isolated:isolated.cleanup()
         signal.signal(signal.SIGTERM,old_sigterm)
     if budget_stop:
+        if context['task']=='discover':
+            rows=list(context.get('_checkpoint_rows',{}).values())
+            if not rows:raise budget_stop
+            performance.event(base,stage,'bounded_yield',reason=str(budget_stop))
+            return {'cases':rows,'has_more':len(state.get('listing_universes',{}).get(context['approved_provider'],{}).get('entries',[]))<30,
+                    'next_cursor':'Continue the same listing after saved positions; no additional case searches.' if len(state.get('listing_universes',{}).get(context['approved_provider'],{}).get('entries',[]))<30 else '',
+                    'order_verified':True,'listing_exhausted':False}
         assigned=context.get('review_cases',context.get('assigned_cases',[]))
         progress=any(case_receipt_path(base,state,c['id']).exists() for c in assigned) if context['task']=='review_batch' else any(c['id'] in (read_json(base/'extracted.json') if (base/'extracted.json').exists() else {}) for c in assigned)
         if not progress:raise budget_stop
@@ -582,11 +649,15 @@ def codex_call(base, state, stage, task_name, context, timeout, codex_binary):
     needed=next(iter(analysis_pipeline.schema(context['analysis_task'])['properties'])) if context.get('analysis_task') else 'results' if context.get('task')=='review_batch' else 'decisions' if context.get('task')=='reconcile_cases' else 'decision' if stage==2 and context.get('task')=='review_case' else {1:'competitors',2:'cases',3:'records',4:'markdown',5:'markdown',6:'markdown',7:'markdown'}[stage]
     if needed not in obj or not isinstance(obj[needed],list if needed in ('competitors','cases','records','decisions','results','categories','completed_ids','nodes','assignments') else str):
         raise RunError(f'Codex output missing {needed} of expected type.','validation')
+    if efficient:obj=expand_worker_receipts(base,state,task_name,context,obj)
     return obj
 
 
 def invoke(base,state,stage,key,context,timeout,cli):
     """Persist attempts and errors; never auto-retry a quota failure."""
+    if stage==7 and state.get('early_completion'):
+        context=dict(context,publication_scope=state['early_completion']['disclosure'],
+                     scope_requirement='Explicitly include publication_scope in Methods and sources; do not imply complete or uniform provider coverage.')
     job=state['jobs'].setdefault(key,{'status':'pending','attempts':0})
     cache=base/'results'/f'{key}.json'
     returned_validation=(job['status']=='paused' and job.get('error_kind')=='validation' and
@@ -604,10 +675,46 @@ def invoke(base,state,stage,key,context,timeout,cli):
             job.setdefault('rejected_responses',[]).append({'at':utc(),'path':str(rejected),
                 'reason':'Incomplete compact ID receipt; explicit resume requires a fresh execution.'})
             reusable=False
+    failed_case_cache=context.get('task') in ('review_batch','extract_batch')
+    if reusable and context.get('task')=='discover':
+        saved=read_json(cache)
+        failed_case_cache=saved.get('order_verified') is True and any(
+            row.get('reading_depth')=='substantive' for row in saved.get('cases',[]))
+    if reusable and returned_validation and stage in (2,3) and state.get('research_policy') and failed_case_cache:
+        recovered=replay_worker_output(base,state,key,context,stage)
+        if recovered is not None:
+            atomic_json(cache,recovered)
+        else:
+            # Keep rejected parsed output distinct from accepted receipts. A
+            # known-invalid cache must not trap genuinely unfinished work in a
+            # replay loop, nor cause completed cases to be read again.
+            rejected=base/'results'/'rejected'/(key+'_'+hashlib.sha256(cache.read_bytes()).hexdigest()[:16]+'.json')
+            rejected.parent.mkdir(parents=True,exist_ok=True)
+            if not rejected.exists():cache.rename(rejected)
+            else:cache.unlink()
+            job.setdefault('rejected_responses',[]).append({'path':str(rejected),'reason':job.get('last_error'),
+                'resolution':'No validated reusable final; durable case receipts retained.'})
+            job['response_ready']=False;reusable=False;save(base,state)
     if reusable:
         if returned_validation:
             job['status']='returned';job['response_replays']=job.get('response_replays',0)+1;save(base,state)
         return read_json(cache)
+    if stage in (2,3) and state.get('research_policy') and context.get('task')!='reconcile_cases':
+        recovered=replay_worker_output(base,state,key,context,stage)
+        if recovered is not None:
+            atomic_json(cache,recovered)
+            job.update(status='returned',response_ready=True,last_completed=utc())
+            save(base,state);return recovered
+        assigned=context.get('review_cases',context.get('assigned_cases',[]))
+        records=read_json(base/'extracted.json') if (base/'extracted.json').exists() else {}
+        if assigned and any(case_receipt_path(base,state,c['id']).exists() if stage==2 else c['id'] in records for c in assigned):
+            # Let the normal caller account for durable partial progress. Its
+            # next assignment excludes completed cases, even if no final parsed.
+            return {'results':[]} if stage==2 else {'records':[]}
+    if job.get('last_error'):
+        job.setdefault('failure_history',[]).append({'attempt':job.get('attempts'),
+            'message':job['last_error'],'kind':job.get('error_kind')})
+    job.pop('last_execution',None) # preparation failures must not overwrite the previous attempt's metadata
     job['attempts']+=1; job['last_started']=utc(); job['status']='running';job['response_ready']=False;save(base,state)
     print(f'[{key}] fresh Codex context, attempt {job["attempts"]}')
     try:
@@ -616,10 +723,16 @@ def invoke(base,state,stage,key,context,timeout,cli):
         job['status']='returned'; job['last_completed']=utc();job['response_ready']=True; job.pop('last_error',None)
         save(base,state)
         return data
-    except RunError as exc:
-        job['status']='paused'; job['last_error']=str(exc); job['error_kind']=exc.kind
+    except (RunError,ValueError,KeyError,TypeError,OSError,workspace.WorkspaceError) as exc:
+        kind=getattr(exc,'kind','validation')
+        job['status']='paused'; job['last_error']=str(exc); job['error_kind']=kind
+        path=base/job['last_execution'] if job.get('last_execution') else None
+        if path and path.exists():
+            metadata=read_json(path);metadata['failure']={'type':type(exc).__name__,'message':str(exc),'kind':kind}
+            atomic_json(path,metadata)
+        performance.event(base,stage,'worker_error',key=key,error_type=type(exc).__name__,message=str(exc),error_kind=kind)
         state['paused_from']=state['phase']
-        state['phase']='paused_quota' if exc.kind=='quota' else 'paused_error'
+        state['phase']='paused_quota' if kind=='quota' else 'paused_error'
         state['pause_reason']=str(exc)
         save(base,state)
         print(f'STOPPED: {state["phase"]}: {exc}',file=sys.stderr)
@@ -636,10 +749,10 @@ def create_run(args):
     state={'company':args.company,'website':website,'id':run,'created_at':utc(),
            'updated_at':utc(),'phase':'stage1','jobs':{},'approved_providers':[],
            'sheet_url':None,'document_url':None,'notes':[]}
-    state['research_policy']=dict(research.POLICY)
+    state['research_policy']=dict(research.POLICY,first_listing_entries=30,listing_navigation_version=2)
     import taxonomy_first
     state['analysis_policy']=dict(taxonomy_first.POLICY)
-    state['workspace_policy']={'complete_only':True,'sync_batch_size':100,'native_doc_tabs':1}
+    state['workspace_policy']={'complete_only':True,'sync_batch_size':100,'native_doc_tabs':1,'overview_presentation':1}
     save(base,state)
     print('Created',run,'\nNo Codex credits used. Run: python3 runner.py run',run)
 
@@ -729,19 +842,366 @@ def checkpoint_messages(text):
         remaining=remaining[end:].lstrip()
 
 
-def commit_worker_message(base,state,key,context,message,origin):
+def listing_slot_id(provider,listing,position,title):
+    return 'listing_'+workspace.digest([provider.casefold(),norm_url(listing),position,' '.join(title.split())])[:16]
+
+
+def discovery_row_id(provider,row,by_slot=False):
+    if by_slot or row.get('url') is None:
+        return listing_slot_id(provider,row['listing_url'],row['listing_position'],row['title'])
+    return case_id(provider,row['url'])
+
+
+def remember_listing_slots(state,provider,proof):
+    """Witnessed slots are independent of screening/extraction checkpoints."""
+    if proof.get('positions_verified') is not True:return
+    ordered=proof.get('ordered_entries',[]);positions=[r.get('position') for r in ordered]
+    if (not positions or any(type(p) is not int or p<1 for p in positions) or
+        positions!=list(range(positions[0],positions[0]+len(positions)))):
+        raise RunError('Cannot verify natural listing order from saved listing evidence.','validation')
+    universe=state.setdefault('listing_universes',{}).setdefault(provider,
+        {'entries':[],'page':1,'cursor':'','complete':False,'order_verified':False})
+    slots={r['position']:r for r in universe.get('observed_slots',[])}
+    cards={r['card_id']:r['position'] for r in slots.values() if r.get('card_id')}
+    cards.update({r['listing_card_id']:r['listing_position'] for r in universe['entries'] if r.get('listing_card_id')})
+    for row in ordered:
+        if row['position']>30:break
+        if not isinstance(row.get('title'),str) or not row['title'].strip():
+            raise RunError('Listing card lacks an observed title.','validation')
+        if row.get('card_id') in cards and cards[row['card_id']]!=row['position']:
+            continue # A witnessed stable card ID already occupies its original slot.
+        slot={'position':row['position'],'title':row['title'],'listing_url':norm_url(proof['url'])}
+        if row.get('card_id'):slot['card_id']=row['card_id']
+        old=slots.get(row['position'])
+        if old and old!=slot:raise RunError('Listing order changed or repeated position conflicts.','validation')
+        slots[row['position']]=slot
+        if row.get('card_id'):cards[row['card_id']]=row['position']
+    # Historical entries already carry independently validated positions.
+    accounted=set(slots)|{r['listing_position'] for r in universe['entries']}
+    if accounted and accounted!=set(range(1,max(accounted)+1)):
+        raise RunError('Listing positions must be a distinct consecutive prefix.','validation')
+    universe['observed_slots']=[slots[p] for p in sorted(slots)]
+
+
+def require_listing_decisions(universe,complete=False):
+    positions={r['listing_position'] for r in universe['entries']}
+    required=set(range(1,max(positions,default=0)+1))
+    if complete:required.update(r['position'] for r in universe.get('observed_slots',[]))
+    missing=sorted(required-positions)
+    if missing:
+        raise RunError('Listing slots lack recorded case decisions or unresolved states: '+str(missing),'validation')
+
+
+def recover_listing_events(args):
+    """Replay interrupted streamed checkpoints through the normal validators."""
+    with locked(args.id) as base:
+        state=read_state(base)
+        if state['phase']!='paused_error' or state.get('paused_from')!='stage2':
+            raise RunError('Listing event recovery requires a paused Stage 2 validation failure.')
+        pending=[]
+        for provider in state['approved_providers']:
+            universe=state.get('listing_universes',{}).get(provider,{})
+            key='listing30_'+slugify(provider)+'_'+workspace.digest(provider_scope(base,state,provider))[:12]+f'_page_{universe.get("page",1):03d}'
+            job=state['jobs'].get(key,{})
+            if (job.get('last_error')!='Listing positions must be a distinct consecutive prefix.' or
+                job.get('response_ready') is not False or job.get('stream_recovery')):continue
+            logs=list((base/'logs').glob(key+'_*.jsonl'))
+            if len(logs)!=1:raise RunError('Listing event recovery needs one unambiguous saved execution: '+key)
+            log=logs[0];prompt=log.with_suffix('.prompt.txt').read_text()
+            context=next((json.loads(line) for line in reversed(prompt.splitlines()) if line.startswith('{"target":')),None)
+            if not context or context.get('approved_provider')!=provider or context.get('task')!='discover':
+                raise RunError('Saved listing assignment identity mismatch: '+key,'validation')
+            messages=[]
+            for line in log.read_text().splitlines():
+                event=json.loads(line)
+                if event.get('type')=='item.completed' and event.get('item',{}).get('type')=='agent_message':
+                    messages.extend(m for m in checkpoint_messages(event['item'].get('text',''))
+                                    if 'source_capture' in m or 'discovered_case' in m)
+            pending.append((key,log,context,messages))
+        if pending:
+            backup=backup_run(base,'before_listing_event_recovery')
+            for key,log,context,messages in pending:
+                for message in messages:commit_worker_message(base,state,key,context,message,log.name)
+                state['jobs'][key]['stream_recovery']={'log':log.name,'sha256':hashlib.sha256(log.read_bytes()).hexdigest(),
+                    'backup':backup,'positions':sorted(r['listing_position'] for r in context.get('_checkpoint_rows',{}).values())}
+                save(base,state)
+                print('Recovered saved listing events:',context['approved_provider'],state['jobs'][key]['stream_recovery']['positions'])
+        print('Saved event recovery finished; research remains paused.')
+
+
+def commit_worker_message(base,state,key,context,message,origin,*,capture_provider=None):
+    assigned=context.get('review_cases',context.get('assigned_cases',[]))
+    if capture_provider is None and 'case_result' in message:
+        capture_provider=next((c['provider'] for c in assigned if c['id']==message['case_result'].get('id')),None)
+    if capture_provider is None and 'extracted_record' in message:
+        row=message['extracted_record']
+        capture_provider=next((c['provider'] for c in assigned if c['provider']==row.get('provider') and
+                              norm_url(c['url'])==norm_url(row.get('source_url'))),None)
+    # Evidence and its case can share one streamed message. Persist/validate
+    # dependencies first, then apply the existing immutable per-case receipt.
+    if 'source_captures' in message:
+        captures=message['source_captures']
+        if not isinstance(captures,list) or any(not isinstance(c,dict) for c in captures):
+            raise RunError('Invalid combined source captures.','validation')
+        for capture in captures:
+            commit_worker_message(base,state,key,context,{'source_capture':capture},origin,capture_provider=capture_provider)
     if 'source_capture' in message:
         capture=message['source_capture'];assigned=context.get('review_cases',context.get('assigned_cases',[]))
-        owner=next((c['provider'] for c in assigned if norm_url(c['url'])==norm_url(capture['url'])),context.get('approved_provider',''))
+        owner=capture_provider or next((c['provider'] for c in assigned if norm_url(c['url'])==norm_url(capture['url'])),context.get('approved_provider',''))
         research.remember(base,atomic_json,capture=capture,provider=owner,origin=origin)
+        if context.get('first_listing_entries') and capture.get('role')=='listing':
+            proofs=[capture]
+            if context.get('url_recovery'):
+                universe=state['listing_universes'][owner]
+                frozen={r['position']:r for r in universe.get('observed_slots',[])}
+                frozen.update({r['listing_position']:r for r in universe['entries']})
+                proofs=[];seen=set()
+                for card in capture.get('ordered_entries',[]):
+                    old=frozen.get(card.get('position'))
+                    if old is None or card.get('title')!=old['title'] or card['position'] in seen:
+                        raise RunError('Recovery link proof conflicts with a frozen listing slot.','validation')
+                    seen.add(card['position'])
+                    proof=dict(capture,ordered_entries=[card])
+                    research.remember(base,atomic_json,capture=proof,provider=owner,origin=origin)
+                    proofs.append(proof)
+            for proof in proofs:
+                for alias in research.capture_urls(proof):context.setdefault('_listing_proofs',{})[alias]=proof
+                if not context.get('url_recovery'):remember_listing_slots(state,owner,proof)
+            save(base,state)
         if capture.get('coverage')=='failed' and context.get('evidence_memory') is not None:
             context['evidence_memory']['known_access_failures'][norm_url(capture['url'])]=capture['text']
-    if 'case_result' in message:commit_case_result(base,state,key,context.get('review_cases',[]),message['case_result'])
-    if 'discovered_case' in message:commit_discovered_case(base,state,key,context,message['discovered_case'])
+    if 'case_result' in message:
+        row=message['case_result'];commit_case_result(base,state,key,context.get('review_cases',[]),row)
+        context.setdefault('_checkpoint_rows',{})[row['id']]=copy.deepcopy(row)
+    if 'discovered_case' in message:
+        row=message['discovered_case']
+        if context.get('url_recovery'):
+            assigned=next((r for r in context['recovery_slots'] if r['listing_position']==row.get('listing_position')),None)
+            if assigned is None or any(row.get(k)!=assigned[k] for k in ('listing_position','listing_url','title','customer')):
+                raise RunError('URL recovery changed an assigned witnessed slot identity.','validation')
+            if row.get('url_status')=='resolved':
+                proofs=research.captures_for(base,context['approved_provider'],row['listing_url'])
+                direct=any(any(c.get('position')==row['listing_position'] and c.get('url')==row.get('url')
+                    for c in p.get('ordered_entries',[])) for p in proofs if p.get('role')=='listing')
+                if not direct:row=dict(row,url_status='content_confirmed') # strict source-quote validation below
+            if row.get('url_status')=='content_confirmed':
+                __import__('url_recovery').saved_association(sys.modules[__name__],base,context['approved_provider'],row)
+        if context.get('first_listing_entries'):
+            validation_row=row
+            if context.get('url_recovery') and row.get('url_status')=='unresolved':
+                validation_row=dict(row,reason=assigned['reason'],evidence=assigned['evidence'])
+            try:commit_listing_candidate(base,state,key,context,validation_row)
+            except RunError as exc:
+                if not context.get('url_recovery') or str(exc) not in (
+                    'Content-confirmed URL lacks source-supported listing association.',
+                    'Cannot verify natural listing order from saved listing evidence; destination URL is unverified.'):
+                    raise
+                # A candidate without identity proof is an individual unresolved
+                # card, not permission to discard its evidence or stop peers.
+                attempted=copy.deepcopy(row)
+                audit=base/'research/url_recovery_unverified'/(key+'_'+str(row['listing_position'])+'_'+workspace.digest(row)[:12]+'.json')
+                atomic_json(audit,{'row':attempted,'reason':str(exc)})
+                row=dict(row,url=None,url_status='unresolved',decision='unresolved',record=None,reading_depth='lightweight',
+                    reason='Candidate association remains unverified; full worker evidence retained at '+str(audit),
+                    evidence=row['evidence']+' Candidate URL (unverified): '+str(attempted.get('url')))
+                context.setdefault('_receipt_aliases',{})[discovery_row_id(context['approved_provider'],attempted)]=discovery_row_id(context['approved_provider'],row)
+                commit_listing_candidate(base,state,key,context,dict(row,reason=assigned['reason'],evidence=assigned['evidence']))
+        if row.get('url') is not None:commit_discovered_case(base,state,key,context,row)
+        streamed=context.setdefault('_checkpoint_rows',{})
+        if context.get('first_listing_entries'):
+            for cid,old in list(streamed.items()):
+                if old.get('listing_position')==row.get('listing_position'):del streamed[cid]
+        streamed[discovery_row_id(context['approved_provider'],row,bool(context.get('first_listing_entries')))]=copy.deepcopy(row)
+        if context.get('url_recovery'):
+            __import__('url_recovery').checkpoint(sys.modules[__name__],base,state,key,context,row)
     if 'extracted_record' in message:
         row=message['extracted_record'];assigned=[c for c in context.get('assigned_cases',[]) if c['provider']==row.get('provider') and norm_url(c['url'])==norm_url(row.get('source_url'))]
         if len(assigned)!=1:raise RunError('Unexpected extraction checkpoint identity','validation')
         persist_records(base,assigned,[row])
+        context.setdefault('_checkpoint_rows',{})[assigned[0]['id']]=copy.deepcopy(row)
+
+
+def expand_worker_receipts(base,state,key,context,obj):
+    """Compact final IDs reference full rows already validated during this call.
+
+    Materialize the local replay cache in code; the model never repeats evidence.
+    Historical full responses remain readable under their original contract.
+    """
+    field={'discover':'cases','review_batch':'results','extract_batch':'records'}.get(context['task'])
+    if not field:return obj
+    streamed=context.get('_checkpoint_rows',{});ids=obj.get('completed_ids',[])
+    if not isinstance(ids,list) or any(not isinstance(cid,str) for cid in ids) or len(set(ids))!=len(ids):
+        raise RunError('Invalid checkpoint ID receipt.','validation')
+    if field=='cases':
+        resolved=[]
+        for cid in ids:
+            if cid.startswith('listing:'):
+                matches=[key for key,row in streamed.items() if str(row.get('listing_position'))==cid.split(':',1)[1]]
+                if len(matches)!=1:raise RunError('Unverified listing-slot receipt.','validation')
+                cid=matches[0]
+            elif cid.startswith(('https://','http://')):
+                if context.get('first_listing_entries'):
+                    matches=[k for k,r in streamed.items() if r.get('url') and norm_url(r['url'])==norm_url(cid)]
+                    if not matches:raise RunError('Unverified listing source receipt.','validation')
+                    if len(matches)>1:raise RunError('Ambiguous listing source receipt; reference listing:N.','validation')
+                    cid=matches[0]
+                else:cid=case_id(context['approved_provider'],cid)
+            elif context.get('first_listing_entries') and cid not in streamed:
+                # Historical workers sometimes returned source-case IDs instead
+                # of URLs. Preserve that form only when it identifies one slot.
+                matches=[k for k,r in streamed.items() if r.get('url') and case_id(context['approved_provider'],r['url'])==cid]
+                if len(matches)>1:raise RunError('Ambiguous listing source receipt; reference listing:N.','validation')
+                if matches:cid=matches[0]
+            cid=context.get('_receipt_aliases',{}).get(cid,cid)
+            resolved.append(cid)
+        ids=resolved
+        if len(set(ids))!=len(ids):raise RunError('Duplicate checkpoint identity receipt.','validation')
+    def identity(row):
+        if field=='cases':return discovery_row_id(context['approved_provider'],row,bool(context.get('first_listing_entries')))
+        if field=='results':return row['id']
+        return case_id(row['provider'],row['source_url'])
+    final_ids=[identity(row) for row in obj[field]]
+    if set(ids)&set(final_ids) or any(cid not in streamed for cid in ids):
+        raise RunError('Unverified or duplicate checkpoint ID receipt.','validation')
+    if context.get('compact_receipts'):
+        if any(cid in streamed and (field!='cases' or row.get('record') is not None) for cid,row in zip(final_ids,obj[field])):
+            raise RunError('Final response duplicated already checkpointed full evidence.','validation')
+        if set(streamed)-set(ids)-set(final_ids):
+            raise RunError('Final response omitted checkpoint IDs.','validation')
+    result=dict(obj);result[field]=obj[field]+[streamed[cid] for cid in ids]
+    if field=='cases' and context.get('first_listing_entries'):
+        result[field].sort(key=lambda row:row['listing_position'])
+    return result
+
+
+def commit_listing_candidate(base,state,key,context,item):
+    """Select by witnessed listing position before relevance changes eligibility."""
+    if item.get('reading_depth')=='substantive':
+        reviewed=context.setdefault('_substantive_slots',set())
+        reviewed.add(item.get('listing_position'))
+        if len(reviewed)>state['research_policy']['review_batch_size']:
+            raise RunError('Listing discovery exceeded substantive review budget.','validation')
+    provider=context['approved_provider'];limit=state['research_policy']['first_listing_entries']
+    if limit!=30:raise RunError('Unsupported listing boundary.','validation')
+    position=item.get('listing_position');listing=item.get('listing_url','')
+    if type(position) is not int or not 1<=position<=limit or not listing:
+        raise RunError('Listing candidate lacks an exact first-30 position.','validation')
+    if context.get('listing_only') and (item.get('reading_depth')!='lightweight' or item.get('record') is not None):
+        raise RunError('Listing-order recovery must not perform deep reading.','validation')
+    listing=norm_url(listing);proof=context.get('_listing_proofs',{}).get(listing)
+    if proof is None or not any(v.get('position')==position for v in proof.get('ordered_entries',[])):
+        proof=next((c for c in research.captures_for(base,provider,listing)
+                    if c.get('role')=='listing' and any(v.get('position')==position for v in c.get('ordered_entries',[]))),None)
+    # Card order and destination resolution are independent. Legacy verified
+    # captures established both; new captures attest positions/titles separately.
+    ordered=proof.get('ordered_entries',[]) if proof and (proof.get('positions_verified') is True or proof.get('order_verified') is True) else []
+    positions=[v.get('position') for v in ordered]
+    matches=[v for v in ordered if v.get('position')==position]
+    if not ordered or any(type(p) is not int for p in positions) or positions!=list(range(positions[0],positions[0]+len(positions))) or len(matches)!=1:
+        raise RunError('Cannot verify natural listing order from saved listing evidence; listing-only recovery required.','validation')
+    observed=matches[0];title=item.get('title')
+    if not isinstance(title,str) or not title.strip() or not isinstance(item.get('customer'),str):
+        raise RunError('Listing card lacks an observed title.','validation')
+    modern=proof.get('positions_verified') is True
+    if modern and observed.get('title')!=title:
+        raise RunError('Observed listing title/position mismatch.','validation')
+    url=item.get('url');status=item.get('url_status','resolved')
+    if status=='unresolved':
+        if url is not None or item.get('record') is not None or item.get('reading_depth')!='lightweight' or item.get('decision')!='unresolved':
+            raise RunError('Unresolved listing URL must remain null with no extraction or case association.','validation')
+        if not modern or observed.get('url_status')!='unresolved' or observed.get('url') is not None:
+            raise RunError('Unresolved card requires witnessed title/position evidence.','validation')
+    elif status=='content_confirmed':
+        if not modern or observed.get('url') is not None or observed.get('url_status')!='unresolved' or not isinstance(url,str):
+            raise RunError('Content association requires an unresolved witnessed listing card.','validation')
+        confirmed=None
+        for capture in research.captures_for(base,provider,url):
+            association=capture.get('listing_association',{});quote=association.get('quote','')
+            if (capture.get('coverage') in ('excerpt','full_text') and
+                association.get('position')==position and association.get('title')==title and
+                norm_url(association.get('listing_url','')) in research.capture_urls(proof) and
+                isinstance(quote,str) and quote.strip() and quote in capture.get('text','') and
+                (title.casefold() in quote.casefold() or
+                 item['customer'].casefold() not in ('','unknown','not established') and
+                 item['customer'].casefold() in title.casefold() and item['customer'].casefold() in quote.casefold())):
+                confirmed=capture;break
+        if confirmed is None:raise RunError('Content-confirmed URL lacks source-supported listing association.','validation')
+        url=norm_url(url)
+    elif status=='resolved':
+        if not isinstance(url,str) or not isinstance(observed.get('url'),str) or norm_url(observed['url'])!=norm_url(url) or (modern and observed.get('url_status')!='resolved'):
+            raise RunError('Cannot verify natural listing order from saved listing evidence; destination URL is unverified.','validation')
+        url=norm_url(url)
+    else:raise RunError('Invalid listing URL status.','validation')
+    if any(not isinstance(item.get(k),str) or not item[k].strip() for k in ('reason','evidence')):
+        raise RunError('Listing card lacks decision evidence.','validation')
+    universe=state.setdefault('listing_universes',{}).setdefault(provider,{'entries':[],'page':1,'cursor':'','complete':False,'order_verified':False})
+    entries=universe['entries'];cid=discovery_row_id(provider,item)
+    old=next((c for c in entries if c['listing_position']==position),None)
+    # Preserve historical IDs on replay; new entry IDs always identify slots.
+    # Only source_case_id joins the case ledger/extraction/publication records.
+    candidate={'id':old['id'] if old else listing_slot_id(provider,listing,position,title),'provider':provider,'url':url,'customer':item['customer'],'title':title,
+               'listing_position':position,'listing_url':listing}
+    if observed.get('card_id'):candidate['listing_card_id']=observed['card_id']
+    candidate['listing_id']=listing_slot_id(provider,listing,position,title)
+    if url:candidate['source_case_id']=cid
+    if status=='content_confirmed':candidate.update(url_status=status,listing_href=None,
+        association_capture_sha256=workspace.digest(confirmed))
+    provenance=research.url_provenance(proof)
+    if provenance.get('resolved_url') or provenance.get('canonical_url'):
+        candidate['listing_provenance']=provenance
+    if status=='unresolved':candidate.update(url_status='unresolved',reason=item['reason'],evidence=item['evidence'])
+    remember_listing_slots(state,provider,proof)
+    if old is not None:
+        comparable={k:v for k,v in old.items() if k not in ('resolution_outcome','listing_id','source_case_id')}
+        proposed={k:v for k,v in candidate.items() if k not in ('listing_id','source_case_id')}
+        if comparable!=proposed:
+            # One bounded association may upgrade a URL-less slot; never alter
+            # an existing resolved source or its completed extraction.
+            if not (old.get('url_status')=='unresolved' and (status=='content_confirmed' or context.get('url_recovery') and status=='resolved') and
+                    all(old[k]==candidate[k] for k in ('provider','title','customer','listing_position','listing_url'))):
+                raise RunError('Listing order changed or repeated position conflicts.','validation')
+            entries[entries.index(old)]=candidate
+    else:
+        # Repeated headings can describe different experiments. Without hrefs,
+        # title equality alone is not evidence that two positions are one card.
+        repeated=any(c['id']==candidate['id'] or candidate.get('listing_card_id') and c.get('listing_card_id')==candidate['listing_card_id'] for c in entries)
+        if repeated and context.get('listing_contract_v2'):
+            context['_listing_duplicates']=context.get('_listing_duplicates',0)+1
+            return
+        if (not modern and position!=len(entries)+1) or repeated:
+            raise RunError('Listing positions must be a distinct consecutive prefix.','validation')
+        added=context.setdefault('_listing_added',set())
+        if len(added)>=context['max_cases']:
+            raise RunError('Listing discovery exceeded its assigned bounded unit.','validation')
+        if entries:
+            root=urlsplit(entries[0]['listing_url']);current=urlsplit(listing)
+            aliases=research.capture_urls(proof)
+            root_aliases={entries[0]['listing_url']}
+            for c in research.captures_for(base,provider,entries[0]['listing_url']):
+                if c.get('role')=='listing':root_aliases.update(research.capture_urls(c))
+            same_listing=bool(aliases & root_aliases)
+            if universe.get('cursor','').startswith(('https://','http://')):
+                same_listing= same_listing or norm_url(universe['cursor']) in aliases
+            if not same_listing and (root.netloc!=current.netloc or not current.path.startswith(root.path.rstrip('/'))):
+                raise RunError('Cannot fill first-30 slots from a different listing.','validation')
+        entries.append(candidate)
+        entries.sort(key=lambda c:c['listing_position'])
+        added.add(candidate['listing_id'])
+    universe['order_verified']=True
+    if status=='unresolved':
+        save(base,state)
+        return  # A listing slot is not a source case: no ledger, extraction or Sheet row.
+    ledger=read_json(screening_path(base)) if screening_path(base).exists() else {}
+    if cid not in ledger and item.get('reading_depth')=='lightweight':
+        if item.get('decision') not in ('relevant','excluded','needs_review','unresolved') or item.get('record') is not None or any(not isinstance(item.get(k),str) or not item[k].strip() for k in ('reason','evidence')):
+            raise RunError('Invalid listing metadata decision.','validation')
+        case=dict({k:candidate[k] for k in ('provider','url','customer','title')},id=cid)
+        ledger[cid]=dict(case,decision=item['decision'],reason=item['reason'],evidence=item['evidence'],basis='lightweight',
+                         competing_product=context['competing_product'],discovery_key=key)
+        atomic_json(screening_path(base),ledger)
+        inventory=read_json(inventory_path(base)) if inventory_path(base).exists() else {}
+        reconcile_screening(base,state,inventory,ledger)
+    save(base,state)
 
 
 def case_receipt_path(base,state,cid):
@@ -830,10 +1290,33 @@ def commit_discovered_case(base,state,key,context,item):
                                   'resolution':'Verified committed source receipt and complete extraction retained; additional discovery evidence is audit-only, not a new case.'})
                 performance.event(base,2,'discovery_collision',case_id=cid,audit=str(audit),saved_customer=saved['customer'],attempted_customer=item['customer'])
         return
-    if cid in ledger and ledger[cid].get('discovery_key')!=key:return
+    records=read_json(base/'extracted.json') if (base/'extracted.json').exists() else {}
+    if cid in records:
+        if item.get('reading_depth')=='substantive' and item.get('decision')=='relevant':
+            validated=validate_records([{'id':cid,'provider':provider,'url':url}],[item.get('record')])
+            if next(iter(validated.values()))!=records[cid]:raise RunError('Completed extraction is immutable: '+cid,'validation')
+        return # Legacy Stage 3 records may have no Stage 2 case journal.
+    previous=ledger.get(cid)
+    completion=bool(previous and previous.get('discovery_key')!=key and
+                    previous.get('decision') in ('relevant','needs_review') and
+                    previous.get('basis') in (None,'lightweight','partial') and
+                    item.get('reading_depth')=='substantive' and item.get('decision')=='relevant')
+    if previous and previous.get('discovery_key')!=key and not completion:return
     if item.get('reading_depth')!='substantive':return
-    case={'id':cid,'provider':provider,'url':url,'customer':item['customer'],'title':item['title'],
-          'competing_product':context['competing_product'],'discovery_key':key}
+    case=dict(previous) if completion else {
+        'id':cid,'provider':provider,'url':url,'customer':item['customer'],'title':item['title'],
+        'competing_product':context['competing_product'],'discovery_key':key}
+    if completion:
+        if (case['id']!=cid or case['provider']!=provider or norm_url(case['url'])!=url or
+                case.get('competing_product',context['competing_product'])!=context['competing_product']):
+            raise RunError('Pending discovery completion changed case identity or product scope.','validation')
+        validate_records([case],[item.get('record')])
+        captures=list(research.captures_for(base,provider,url))
+        readable=any(c.get('coverage') in ('excerpt','full_text') for c in captures)
+        if not readable:
+            links={u.rstrip('.,);') for c in captures for u in re.findall(r'https?://[^\s<>"\']+',c.get('text',''))}
+            readable=any(c.get('coverage') in ('excerpt','full_text') for link in links for c in research.captures_for(base,provider,link))
+        if not readable:raise RunError('Pending discovery completion lacks readable source evidence.','validation')
     if item.get('decision')=='needs_review':
         # Reading a landing page is not necessarily reading the full case
         # (for example, its unattempted PDF). Keep that partial evidence queued.
@@ -858,25 +1341,207 @@ def recover_case_work(base,state):
         if not entry.get('committed') or missing_active_metadata:
             apply_case_receipt(base,state,path)
             ledger=read_json(screening_path(base)) if screening_path(base).exists() else {}
-    # A final batch receipt can survive a crash after the worker exited but before
-    # all rows were applied. Replay it without dispatching another worker.
-    for assignment in sorted((base/'research'/'batches').glob('*.json')):
-        a=read_json(assignment);result=base/'results'/f'{a["key"]}.json'
-        if not a.get('committed') and a.get('dataset_revision')==state.get('dataset_revision'):
-            # Recover already emitted checkpoints even when a legacy parser or
-            # interruption prevented them being applied. Never reopen sources.
-            for log in sorted((base/'logs').glob(a['key']+'_*.jsonl')):
-                for line in log.read_text().splitlines():
-                    try:event=json.loads(line)
-                    except ValueError:continue
-                    item=event.get('item',{})
-                    if event.get('type')=='item.completed' and item.get('type')=='agent_message':
-                        for message in checkpoint_messages(item.get('text','')):
-                            commit_worker_message(base,state,a['key'],{'review_cases':a['cases']},message,log.name)
-            if result.exists():
-                for row in read_json(result).get('results',[]):commit_case_result(base,state,a['key'],a['cases'],row)
-            if all(case_receipt_path(base,state,c['id']).exists() for c in a['cases']):
-                a['committed']=True;atomic_json(assignment,a)
+    # Replay raw worker artifacts before scheduling; raw data never becomes a
+    # reusable result until normal checkpoint/receipt validators accept it.
+    recover_worker_outputs(base,state)
+
+
+def saved_worker_assignment(base,state,log):
+    """Recover the frozen assignment, never broader project history or new facts."""
+    metadata_path=log.with_suffix('.execution.json')
+    if metadata_path.exists():
+        metadata=read_json(metadata_path)
+        if metadata.get('dataset_revision')!=state.get('dataset_revision'):return None
+        for name,digest in metadata.get('artifacts',{}).items():
+            path=log.parent/name
+            if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest()!=digest:
+                raise RunError('Saved worker artifact checksum mismatch: '+name,'validation')
+        context=metadata['assignment']
+    else:
+        if state.get('dataset_revision') is not None:return None # historical scope cannot be proven
+        prompt=log.with_suffix('.prompt.txt')
+        if not prompt.exists():return None
+        try:context=json.JSONDecoder().raw_decode(prompt.read_text().split('TASK ASSIGNMENT (machine generated):',1)[1].lstrip())[0]
+        except (ValueError,IndexError):return None
+    if context.get('task') not in ('discover','review_batch','extract_batch'):return None
+    scope=research_scope(base) if not state.get('scope_from_product_understanding') else None
+    if scope and context.get('research_scope')!=scope['criteria']:return None
+    if context.get('url_recovery'):
+        entries=state.get('listing_universes',{}).get(context['approved_provider'],{}).get('entries',[])
+        context=copy.deepcopy(context)
+        for slot in context.get('recovery_slots',[]):
+            old=next((r for r in entries if all(r.get(k)==slot.get(k) for k in ('listing_position','listing_url','title','customer'))),None)
+            if old:
+                for field in ('reason','evidence'):
+                    if field not in slot and field in old:slot[field]=old[field]
+    if str(context.get('target','')).casefold()!=state['company'].casefold():return None
+    scopes=dict(context.get('competing_products',{}))
+    if context.get('competing_product'):scopes[context['approved_provider']]=context['competing_product']
+    for case in context.get('review_cases',context.get('assigned_cases',[])):
+        if case.get('competing_product'):scopes[case['provider']]=case['competing_product']
+    if not scopes:return None
+    for provider,scope in scopes.items():
+        if provider not in state['approved_providers'] or scope!=provider_scope(base,state,provider):return None
+    return copy.deepcopy(context)
+
+
+def replay_worker_output(base,state,key,context,stage):
+    """Extend existing receipt replay to unaccepted streams and raw final files.
+
+    Per-case validators remain the acceptance boundary. Partial results never
+    prove listing exhaustion, and a transcript is never itself a result cache.
+    """
+    best=None
+    for log in sorted((base/'logs').glob(key+'_*.jsonl'),key=lambda p:p.stat().st_mtime_ns):
+        frozen=saved_worker_assignment(base,state,log)
+        # Old review journals already contain a revision-bound assignment even
+        # when the CLI prompt was unavailable. Reuse that existing provenance.
+        journal=base/'research/batches'/f'{key}.json'
+        if frozen is None and journal.exists() and not log.with_suffix('.prompt.txt').exists() and not log.with_suffix('.execution.json').exists():
+            saved=read_json(journal)
+            if saved.get('dataset_revision')==state.get('dataset_revision') and all(
+                    c.get('competing_product')==provider_scope(base,state,c['provider']) for c in saved['cases']):
+                frozen=dict(context,review_cases=saved['cases'])
+        if frozen is None:continue
+        if frozen.get('task')!=context.get('task'):continue
+        ctx=copy.deepcopy(frozen);messages=[];errors=[];corrections=[];committed=0
+        for number,line in enumerate(log.read_text().splitlines(),1):
+            try:event=json.loads(line)
+            except ValueError:continue # truncated lines remain raw, never accepted
+            item=event.get('item',{})
+            if event.get('type')=='item.completed' and item.get('type')=='agent_message':
+                messages.extend(checkpoint_messages(item.get('text','')))
+        def apply(message):
+            nonlocal committed
+            try:
+                row=message.get('discovered_case',message.get('case_result',message.get('extracted_record',{})))
+                record=row.get('record') if 'extracted_record' not in message else row
+                if isinstance(record,dict) and record.get('status')=='complete':
+                    if record.get('customer')=='':
+                        assigned=ctx.get('review_cases',ctx.get('assigned_cases',ctx.get('recovery_slots',[])))
+                        named={c.get('customer') for c in assigned if c.get('url') and norm_url(c['url'])==norm_url(record['source_url']) and c.get('customer')}
+                        if len(named)==1:
+                            name=next(iter(named));proof=None
+                            identity_sources=[c for c in research.captures_for(base,record['provider'],record['source_url']) if c.get('coverage') in ('excerpt','full_text')]
+                            labels={line[len('Customer: '):] for c in identity_sources for line in c.get('text','').splitlines() if line.startswith('Customer: ')}
+                            quote='Customer: '+name
+                            if labels=={name}:proof=next(c for c in identity_sources if quote in c.get('text','').splitlines())
+                            if proof:
+                                message=copy.deepcopy(message)
+                                row=message.get('discovered_case',message.get('case_result',message.get('extracted_record',{})))
+                                record=row.get('record') if 'extracted_record' not in message else row
+                                record['customer']=name
+                                corrections.append({'field':'record.customer','from':'','to':name,
+                                                    'source_capture_sha256':workspace.digest(proof),'quote':quote})
+                    cid=case_id(record['provider'],record['source_url'])
+                    records=read_json(base/'extracted.json') if (base/'extracted.json').exists() else {}
+                    if cid in records:
+                        expected=validate_records([{'id':cid,'provider':record['provider'],'url':record['source_url']}],[record])
+                        if next(iter(expected.values()))!=records[cid]:
+                            raise RunError('Saved output conflicts with durable extraction; original remains authoritative.','validation')
+                    captures=list(research.captures_for(base,record['provider'],record['source_url']))
+                    readable=any(c.get('coverage') in ('excerpt','full_text') for c in captures)
+                    if not readable:
+                        links={u.rstrip('.,);') for c in captures for u in re.findall(r'https?://[^\s<>"\']+',c.get('text',''))}
+                        readable=any(c.get('coverage') in ('excerpt','full_text') for url in links for c in research.captures_for(base,record['provider'],url))
+                    if cid not in records and not readable:
+                        raise RunError('Saved extraction lacks readable source evidence; further research required.','validation')
+                commit_worker_message(base,state,key,ctx,message,log.name)
+                committed+=int(any(k in message for k in ('discovered_case','case_result','extracted_record')))
+                return True
+            except (RunError,ValueError,KeyError,TypeError,workspace.WorkspaceError) as exc:
+                errors.append({'message_sha256':workspace.digest(message),'type':type(exc).__name__,'error':str(exc)})
+                return False
+        # Save all available evidence first; a later capture in a buffered chunk
+        # may support an earlier case whose handler originally failed.
+        for message in messages:
+            if any(k in message for k in ('source_capture','source_captures')):
+                captures={k:message[k] for k in ('source_capture','source_captures') if k in message}
+                assigned=ctx.get('review_cases',ctx.get('assigned_cases',[]))
+                row=message.get('case_result',{})
+                owner=next((c['provider'] for c in assigned if c['id']==row.get('id')),None)
+                if owner is None and 'extracted_record' in message:
+                    row=message['extracted_record']
+                    owner=next((c['provider'] for c in assigned if c['provider']==row.get('provider') and norm_url(c['url'])==norm_url(row.get('source_url'))),None)
+                try:commit_worker_message(base,state,key,ctx,captures,log.name,capture_provider=owner)
+                except (RunError,ValueError,KeyError,TypeError) as exc:
+                    errors.append({'message_sha256':workspace.digest(captures),'type':type(exc).__name__,'error':str(exc)})
+        for message in messages:
+            row={k:message[k] for k in ('discovered_case','case_result','extracted_record') if k in message}
+            if row:apply(row)
+        output=log.with_suffix('.result.json');candidate=None
+        if output.exists():
+            try:
+                obj=read_json(output);field={'discover':'cases','review_batch':'results','extract_batch':'records'}[ctx['task']]
+                if not isinstance(obj,dict) or not isinstance(obj.get(field),list):raise RunError('Saved final output lacks '+field,'validation')
+                if field=='cases' and (type(obj.get('has_more')) is not bool or not isinstance(obj.get('next_cursor'),str)):
+                    raise RunError('Saved final output lacks valid discovery continuation.','validation')
+                if field=='cases' and ctx.get('first_listing_entries') and obj.get('listing_exhausted') is True and (obj['has_more'] or obj['next_cursor']):
+                    raise RunError('Saved listing exhaustion conflicts with continuation.','validation')
+                # The normal receipt expander proves every ID against validated
+                # stream checkpoints. Full historical rows are still validated.
+                candidate=expand_worker_receipts(base,state,key,dict(ctx,compact_receipts=False),obj)
+                row_key={'cases':'discovered_case','results':'case_result','records':'extracted_record'}[field]
+                valid=True
+                for row in candidate[field]:valid=apply({row_key:row}) and valid
+                if not valid:candidate=None
+                elif not candidate[field] and field!='cases':
+                    assigned=ctx.get('review_cases',ctx.get('assigned_cases',[]))
+                    records=read_json(base/'extracted.json') if (base/'extracted.json').exists() else {}
+                    if any(not case_receipt_path(base,state,c['id']).exists() if field=='results' else c['id'] not in records for c in assigned):
+                        raise RunError('Saved final accounts for no unfinished cases.','validation')
+                else:
+                    def identity(row):
+                        if field=='cases':return discovery_row_id(ctx['approved_provider'],row,bool(ctx.get('first_listing_entries')))
+                        if field=='results':return row['id']
+                        return case_id(row['provider'],row['source_url'])
+                    candidate[field]=[ctx.get('_checkpoint_rows',{}).get(identity(row),row) for row in candidate[field]]
+            except (RunError,ValueError,KeyError,TypeError) as exc:
+                errors.append({'artifact':output.name,'type':type(exc).__name__,'error':str(exc)});candidate=None
+        receipt={'log':log.name,'log_sha256':hashlib.sha256(log.read_bytes()).hexdigest(),
+                 'dataset_revision':state.get('dataset_revision'),'committed_rows':len(ctx.get('_checkpoint_rows',{})),
+                 'validated_row_messages':committed,'corrections':corrections,
+                 'raw_final_reusable':candidate is not None,'validation_scope':'case checkpoints; caller still validates parent continuation',
+                 'errors':errors}
+        path=log.with_suffix('.replay.json')
+        if not path.exists() or read_json(path)!=receipt:
+            atomic_json(path,receipt)
+            performance.event(base,stage,'local_recovery',key=key,log=log.name,committed_rows=len(ctx.get('_checkpoint_rows',{})),
+                              raw_final_reusable=candidate is not None,errors=errors)
+        if candidate is not None:best=candidate
+    return best
+
+
+def recover_worker_outputs(base,state):
+    """Replay only unfinished research executions before normal scheduling."""
+    contexts={}
+    for path in (base/'research/batches').glob('*.json'):
+        saved=read_json(path)
+        if not saved.get('committed') and saved.get('dataset_revision')==state.get('dataset_revision'):
+            contexts[saved['key']]={'target':state['company'],'task':'review_batch','review_cases':saved['cases']}
+    for key,job in state['jobs'].items():
+        if job.get('status')=='complete' and job.get('response_ready',True):continue
+        for log in sorted((base/'logs').glob(key+'_*.jsonl'),key=lambda p:p.stat().st_mtime_ns):
+            context=saved_worker_assignment(base,state,log)
+            if context is not None:contexts[key]=context
+    for key,context in contexts.items():
+        stage=3 if context['task']=='extract_batch' else 2
+        result=replay_worker_output(base,state,key,context,stage)
+        if result is not None:
+            path=base/'results'/f'{key}.json'
+            if path.exists() and read_json(path)!=result:
+                archive=base/'results/rejected'/(key+'_'+hashlib.sha256(path.read_bytes()).hexdigest()[:16]+'.json')
+                archive.parent.mkdir(parents=True,exist_ok=True)
+                if not archive.exists():path.rename(archive)
+                else:path.unlink()
+            if not path.exists():atomic_json(path,result)
+            job=state['jobs'].setdefault(key,{'attempts':0})
+            job.update(status='returned',response_ready=True);save(base,state)
+        journal=base/'research/batches'/f'{key}.json'
+        if journal.exists():
+            saved=read_json(journal)
+            if not saved.get('committed') and all(case_receipt_path(base,state,c['id']).exists() for c in saved['cases']):
+                saved['committed']=True;atomic_json(journal,saved)
 
 
 def coverage_plan(base,state):
@@ -952,6 +1617,29 @@ def configure_research(args):
         settings.update(changes);state['research_policy']=settings;save(base,state)
 
 
+def enable_listing_boundary(args):
+    """Backed-up policy migration; preserve all evidence and publication state."""
+    with locked(args.id) as base:
+        state=read_state(base)
+        if state.get('research_policy',{}).get('first_listing_entries')==30:
+            print('First-30 listing boundary already enabled; checkpoints retained.');return
+        phase=state.get('paused_from',state['phase'])
+        if phase not in ('stage1','awaiting_approval','stage2','stage3'):
+            raise RunError('Listing migration is restricted to unfinished research; saved analyses are not changed.')
+        backup=backup_run(base,'before_first30_listing_boundary')
+        previous=copy.deepcopy(state.get('research_policy',{}))
+        state.setdefault('research_policy',dict(research.POLICY))['first_listing_entries']=30
+        state['listing_order_recovery']=True
+        state.setdefault('listing_universes',{})
+        state.setdefault('research_policy_history',[]).append({'at':utc(),'previous':previous,'changes':{'first_listing_entries':30},
+            'reason':'User-approved natural first-30 listing entries; preserve completed work; no replacements.','backup':backup})
+        if phase=='stage3':
+            if state['phase'].startswith('paused'):state['paused_from']='stage2'
+            else:state['phase']='stage2'
+        save(base,state)
+        print('First-30 boundary enabled. Listing order remains unverified until witnessed; no worker launched. Backup:',backup)
+
+
 def configure_analysis(args):
     import analysis_compact
     with locked(args.id) as base:
@@ -1021,7 +1709,6 @@ def reconcile_screening(base,state,inventory,decisions):
     for case in decisions.values():
         if case['provider'] not in inventory:
             inventory[case['provider']]=[];changed=True
-        if case.get('discovery_key'):checkpoint_job(state,case['discovery_key'])
         cases=inventory[case['provider']]
         if case['decision']!='relevant':continue
         if not any(c['id']==case['id'] for c in cases):
@@ -1029,10 +1716,327 @@ def reconcile_screening(base,state,inventory,decisions):
     if changed:atomic_json(inventory_path(base),inventory)
 
 
+def saved_discovery_response(base,state,key):
+    """Return reusable cache provenance before invoke can create a new result."""
+    job=state['jobs'].get(key,{})
+    returned_validation=(job.get('status')=='paused' and job.get('error_kind')=='validation' and
+        (job.get('response_ready') is True or ('response_ready' not in job and job.get('last_completed','')>=job.get('last_started','~'))))
+    path=base/'results'/f'{key}.json'
+    if not path.exists() or not (job.get('status') in ('returned','complete') or returned_validation):return None,False
+    obj=read_json(path)
+    # Job status describes execution, not the schema that produced the cache.
+    modern=any('reading_depth' in c for c in obj.get('cases',[]) if isinstance(c,dict))
+    for schema in (base/'logs').glob(key+'_*.schema.json'):
+        if 'reading_depth' in read_json(schema).get('properties',{}).get('cases',{}).get('items',{}).get('properties',{}):
+            modern=True
+    return obj,modern
+
+
+def validate_discovery_recovery(base,state,key,provider,product,obj):
+    """Read-only preflight of every saved candidate; never manufacture deep receipts."""
+    limit=state['research_policy']['review_batch_size']
+    if not isinstance(obj.get('cases'),list) or len(obj['cases'])>state['research_policy']['discovery_batch_size']:
+        raise RunError('Saved discovery exceeds configured candidate limit.','validation')
+    ledger=read_json(screening_path(base)) if screening_path(base).exists() else {}
+    records=read_json(base/'extracted.json') if (base/'extracted.json').exists() else {}
+    inventory=read_json(inventory_path(base)) if inventory_path(base).exists() else {}
+    seen=set()
+    for start in range(0,len(obj['cases']),limit):
+        for item in obj['cases'][start:start+limit]:
+            if not isinstance(item,dict) or any(not isinstance(item.get(k),str) for k in ('url','customer','title','contribution')):
+                raise RunError('Invalid saved discovery candidate.','validation')
+            if item.get('reading_depth') not in ('lightweight','substantive') or item.get('decision') not in ('relevant','excluded','needs_review','unresolved') or any(not isinstance(item.get(k),str) or not item[k].strip() for k in ('reason','evidence')):
+                raise RunError('Invalid saved discovery decision.','validation')
+            url=norm_url(item['url']);cid=case_id(provider,url)
+            if cid in seen:raise RunError('Duplicate source in saved discovery page.','validation')
+            seen.add(cid)
+            case=dict(id=cid,provider=provider,url=url,customer=item['customer'],title=item['title'],competing_product=product,discovery_key=key)
+            partial=dict(case,decision=item['decision'],reason=item['reason'],evidence=item['evidence'],
+                         basis='partial' if item['reading_depth']=='substantive' else 'lightweight',contribution=item['contribution'])
+            if (item['reading_depth']=='lightweight' or item['decision']=='needs_review') and item.get('record') is not None:
+                raise RunError('Partial/lightweight discovery contains an extraction.','validation')
+            path=case_receipt_path(base,state,cid)
+            if path.exists():
+                entry=read_json(path);saved=entry['case'];result=entry['result']
+                if entry.get('committed') is not True or entry.get('dataset_revision')!=state.get('dataset_revision') or any(saved.get(k)!=case[k] for k in ('id','provider','url','customer','title','competing_product','discovery_key')):
+                    raise RunError('Saved discovery receipt identity/commit mismatch: '+cid,'validation')
+                expected={k:item.get(k) for k in ('decision','reason','evidence','record','contribution')};expected['id']=cid
+                # A later review may resolve an earlier partial decision. Prove
+                # that exact partial decision was the review's input.
+                superseded=item['decision']=='needs_review' and all(saved.get(k)==v for k,v in partial.items())
+                if not superseded and result!=expected:
+                    raise RunError('Saved discovery receipt result mismatch: '+cid,'validation')
+                if result.get('id')!=cid or result.get('decision') not in ('relevant','excluded','unresolved') or any(not isinstance(result.get(k),str) or not result[k].strip() for k in ('reason','evidence')) or not isinstance(result.get('contribution'),str):
+                    raise RunError('Invalid saved discovery receipt decision: '+cid,'validation')
+                expected_ledger=dict(saved,decision=result['decision'],reason=result['reason'],evidence=result['evidence'],basis=entry.get('basis','substantive'),contribution=result.get('contribution',''))
+                if ledger.get(cid)!=expected_ledger:
+                    raise RunError('Saved discovery screening mismatch: '+cid,'validation')
+                checkpoint=state.get('case_checkpoints',{}).get(cid,{})
+                if checkpoint!={'receipt':str(path),'decision':result['decision'],'task':entry['task']}:
+                    raise RunError('Saved discovery checkpoint mismatch: '+cid,'validation')
+                if result['decision']=='relevant':
+                    validated=validate_records([saved],[result['record']])
+                    if result['record'].get('status')!='complete' or records.get(cid)!=next(iter(validated.values())):
+                        raise RunError('Saved discovery extraction mismatch: '+cid,'validation')
+                    matches=[c for c in inventory.get(provider,[]) if c['id']==cid]
+                    if len(matches)!=1 or any(matches[0].get(k)!=saved[k] for k in ('id','provider','url','customer','title')):
+                        raise RunError('Saved discovery inventory mismatch: '+cid,'validation')
+                elif result.get('record') is not None or cid in records:
+                    raise RunError('Non-relevant saved discovery has an extraction: '+cid,'validation')
+            elif item['reading_depth']=='substantive':
+                if item['decision']!='needs_review' or ledger.get(cid)!=partial or cid in records:
+                    raise RunError('Saved discovery requires a complete checkpoint: '+cid,'validation')
+            elif cid in ledger:
+                expected=dict(case,decision=item['decision'],reason=item['reason'],evidence=item['evidence'],basis='lightweight')
+                if ledger[cid]!=expected:
+                    raise RunError('Saved lightweight screening mismatch: '+cid,'validation')
+                if item['decision']=='relevant':
+                    matches=[c for c in inventory.get(provider,[]) if c['id']==cid]
+                    if len(matches)!=1 or any(matches[0].get(k)!=case[k] for k in ('id','provider','url','customer','title')):
+                        raise RunError('Saved lightweight inventory mismatch: '+cid,'validation')
+            elif cid in records:
+                raise RunError('Saved discovery record lacks screening: '+cid,'validation')
+    return len(seen)
+
+
+def discovery_recovery_unit(base,state,key,provider,product,obj,page):
+    """Account for one bounded unit of an immutable, fully checkpointed cache."""
+    total=validate_discovery_recovery(base,state,key,provider,product,obj)
+    identity={'response_sha256':workspace.digest(obj),'dataset_revision':state.get('dataset_revision'),
+              'provider':provider,'page':page,'total':total}
+    path=base/'research'/'discovery_recovery'/f'{key}.json'
+    saved=read_json(path) if path.exists() else dict(identity,offset=0)
+    if any(saved.get(k)!=v for k,v in identity.items()) or type(saved.get('offset')) is not int or not 0<=saved['offset']<=total:
+        raise RunError('Saved discovery recovery provenance mismatch.','validation')
+    ledger=read_json(screening_path(base)) if screening_path(base).exists() else {}
+    if any(case_id(provider,norm_url(c['url'])) not in ledger for c in obj['cases'][:saved['offset']]):
+        raise RunError('Accounted discovery candidate lost its screening checkpoint.','validation')
+    end=min(total,saved['offset']+state['research_policy']['review_batch_size'])
+    return obj['cases'][saved['offset']:end],path,dict(saved,offset=end),end==total
+
+
+def recover_saved_listing_cards(base,key,provider,context,obj):
+    """Project old combined order/link failures into witnessed, URL-less slots.
+
+    Only an already-saved exhaustive enumeration qualifies. Never promote the
+    old tentative href associations, change source results, or read websites.
+    """
+    rows=obj.get('cases',[])
+    if not rows or len(rows)>30 or obj.get('listing_exhausted') is not True or obj.get('has_more') is not False or obj.get('next_cursor')!='':
+        raise RunError('Saved listing does not establish an exhausted ordered card universe.','validation')
+    if [r.get('listing_position') for r in rows]!=list(range(1,len(rows)+1)) or len({r.get('title') for r in rows})!=len(rows):
+        raise RunError('Saved card titles/positions are not a distinct consecutive prefix.','validation')
+    if any(r.get('reading_depth')!='lightweight' or r.get('record') is not None or not isinstance(r.get('title'),str) or not r['title'].strip() for r in rows):
+        raise RunError('Saved card recovery must contain only observed metadata.','validation')
+    listing=norm_url(rows[0]['listing_url'])
+    if any(norm_url(r.get('listing_url',''))!=listing for r in rows):
+        raise RunError('Saved card enumeration mixes listings.','validation')
+    memory=read_json(base/'research/memory.json');proof=None
+    for fp in memory.get('sources',{}).get(research.canonical(listing),[]):
+        capture=read_json(base/'research/captures'/f'{fp}.json')
+        if capture.get('provider')!=provider or capture.get('role')!='listing' or capture.get('coverage') not in ('excerpt','full_text'):continue
+        text=capture.get('text','');cursor=0
+        for row in rows:
+            marker=f'({row["listing_position"]}) {row["title"]}'
+            at=text.find(marker,cursor)
+            if at<0:break
+            cursor=at+len(marker)
+        else:
+            if 'no pagination is exposed' in text.lower() and 'footer' in text.lower():proof=capture;break
+    if proof is None:
+        raise RunError('Saved evidence does not confirm card order and listing exhaustion.','validation')
+    projected=copy.deepcopy(obj)
+    for row in projected['cases']:
+        row.update(url=None,url_status='unresolved',decision='unresolved',
+            reason='Listing card is observed; destination URL is unresolved. No tentative case association is used.',
+            evidence=f'Observed card {row["listing_position"]}: {row["title"]}. Saved listing output did not establish its destination URL.')
+    projected.update(order_verified=True,completed_ids=[])
+    derived=dict(proof,positions_verified=True,order_verified=True,ordered_entries=[
+        {'position':r['listing_position'],'title':r['title'],'url':None,'url_status':'unresolved'} for r in projected['cases']])
+    context.setdefault('_listing_proofs',{})[listing]=derived
+    receipt={'source_response_sha256':workspace.digest(obj),'source_capture_sha256':workspace.digest(proof),
+             'projection':projected,'method':'Observed titles and numbered positions only; all destination associations explicitly discarded.'}
+    path=base/'research/listing_card_recovery'/f'{key}.json'
+    if path.exists():
+        if read_json(path)!=receipt:raise RunError('Saved listing-card recovery provenance mismatch.','validation')
+    else:atomic_json(path,receipt)
+    return projected
+
+
+def commit_inaccessible_listing(base,state,key,provider,context,obj):
+    """Close inaccessible coverage, never infer an empty customer-story catalog."""
+    universe=state['listing_universes'][provider]
+    if (obj.get('order_verified') is not False or obj.get('cases')!=[] or
+        obj.get('completed_ids',[])!=[] or obj.get('listing_exhausted') is not False or
+        obj.get('has_more') is not False or universe['entries'] or universe.get('observed_slots')):
+        return False
+    target=obj.get('next_cursor')
+    if not isinstance(target,str) or not target.startswith(('https://','http://')):return False
+    proofs=list(context.get('_listing_proofs',{}).values())+list(research.captures_for(base,provider,target))
+    for proof in proofs:
+        continuation=proof.get('continuation',{})
+        if (proof.get('role')!='listing' or proof.get('coverage') not in ('excerpt','full_text','failed') or
+            proof.get('positions_verified') is not False or proof.get('ordered_entries')!=[] or
+            not isinstance(proof.get('text'),str) or not proof['text'].strip() or
+            continuation.get('kind')!='blocked' or continuation.get('target')!=target or
+            not isinstance(continuation.get('evidence'),str) or not continuation['evidence'].strip() or
+            norm_url(target) not in research.capture_urls(proof)):
+            continue
+        # A contradictory saved card witness must not be discarded as an access
+        # failure merely because the current response omitted its cases.
+        memory=read_json(base/'research/memory.json') if (base/'research/memory.json').exists() else {}
+        for refs in memory.get('sources',{}).values():
+            for fp in refs:
+                saved=read_json(base/'research/captures'/f'{fp}.json')
+                if saved.get('provider')==provider and saved.get('role')=='listing' and saved.get('ordered_entries'):
+                    raise RunError('Inaccessible-listing response conflicts with saved card evidence.','validation')
+        universe.update(complete=True,coverage_status='incomplete',listing_access_status='inaccessible',
+            listing_story_count=None,listing_exhausted=False,order_verified=False,
+            continuation_limitation=proof['text']+' '+continuation['evidence'],
+            listing_access_evidence={'url':proof['url'],'capture_sha256':workspace.digest(proof),'origin':proof.get('origin','')})
+        checkpoint_job(state,key);save(base,state)
+        print(f'Listing universe {provider}: inaccessible; zero observed cards, customer-story count unknown; incomplete coverage.')
+        return True
+    return False
+
+
+def listing_discovery_plan(base,state):
+    """Replay unfinished saved units first; job status alone proves no commit."""
+    plan=coverage_plan(base,state);recoveries=[]
+    for order,provider in enumerate(state['approved_providers']):
+        u=state.get('listing_universes',{}).get(provider,{})
+        if u.get('complete'):continue
+        key='listing30_'+slugify(provider)+'_'+workspace.digest(provider_scope(base,state,provider))[:12]+f'_page_{u.get("page",1):03d}'
+        cached,_=saved_discovery_response(base,state,key)
+        job=state['jobs'].get(key,{})
+        missing={r['position'] for r in u.get('observed_slots',[])}-{r['listing_position'] for r in u.get('entries',[])}
+        # The current page has not committed while the universe still points to
+        # it, even if an old per-case reconciliation marked its job complete.
+        if cached is not None or missing or job.get('attempts',0):
+            rank=0 if cached is not None else 1 if missing else 2
+            recoveries.append((rank,state.get('coverage_turns',{}).get(provider,0),order,provider))
+    if recoveries:
+        provider=min(recoveries)[-1]
+        return dict(plan,action='discover',provider=provider,cases=[])
+    return plan
+
+
+def listing_discovery_step(base,state,timeout,cli):
+    """Existing Stage 2 with a finite natural-listing boundary, not a new stage."""
+    records=read_json(base/'extracted.json') if (base/'extracted.json').exists() else {}
+    if not workspace.ensure_sync(base,state,ordered_records(base),atomic_json,flush=False):
+        save(base,state);return False
+    plan=listing_discovery_plan(base,state)
+    if plan['action']=='done':
+        inventory=read_json(inventory_path(base)) if inventory_path(base).exists() else {}
+        active=research.eligible_inventory(state,inventory,records)
+        atomic_json(base/'batches.json',compile_batches(active))
+        state['screening_summary']={'relevant':sum(map(len,active.values())),
+            'boundary':'First 30 distinct entries in each provider natural customer-story listing; irrelevant/inaccessible entries consume slots; no replacement or date selection. Completed historical records outside this boundary are retained.',
+            'providers':[{k:v for k,v in row.items() if k not in ('pending','resolution_pending','order','last_selected')} for row in plan['coverage']]}
+        state['phase']='stage3';save(base,state);return True
+    turn=1+max(state.get('coverage_turns',{}).values(),default=0)
+    for provider in {c['provider'] for c in plan['cases']} or {plan['provider']}:state.setdefault('coverage_turns',{})[provider]=turn
+    save(base,state)
+    if plan['action']=='resolve_urls':
+        return __import__('url_recovery').resolve_pending(sys.modules[__name__],base,state,plan,timeout,cli)
+    if plan['action']=='review_batch':return run_review_batch(base,state,plan,timeout,cli)
+    provider=plan['provider'];product=provider_scope(base,state,provider)
+    universe=state.setdefault('listing_universes',{}).setdefault(provider,{'entries':[],'page':1,'cursor':'','complete':False,'order_verified':False})
+    if universe['complete']:raise RunError('Completed listing was scheduled again.','validation')
+    remaining=30-len(universe['entries'])
+    if remaining<=0:
+        require_listing_decisions(universe,complete=True)
+        universe['complete']=True;save(base,state);return True
+    memory=read_json(base/'research/memory.json') if (base/'research/memory.json').exists() else {}
+    sources=[]
+    for url,refs in memory.get('sources',{}).items():
+        for fp in refs:
+            capture=read_json(base/'research/captures'/f'{fp}.json')
+            if capture.get('provider')==provider and capture.get('role')=='listing' and capture.get('coverage')!='failed':
+                if any(t in urlsplit(url).path.lower() for t in ('customer','success-stor','case-stud')):sources.append(url)
+                break
+    sources=sorted(set(sources),key=lambda u:(len(urlsplit(u).path),len(u)))[:6]
+    key='listing30_'+slugify(provider)+'_'+workspace.digest(product)[:12]+f'_page_{universe["page"]:03d}'
+    ledger=read_json(screening_path(base)) if screening_path(base).exists() else {}
+    context={'target':state['company'],'target_website':state['website'],'task':'discover','approved_provider':provider,
+        'competing_product':product,'first_listing_entries':30,'listing_contract_v2':state['research_policy'].get('listing_navigation_version')==2,'listing_only':bool(state.get('listing_order_recovery')),
+        'listing_sources':sources,'selected_listing_entries':universe['entries'],'observed_listing_slots':universe.get('observed_slots',[]),'page':universe['page'],'cursor':universe['cursor'],
+        'max_cases':min(remaining,state['research_policy']['discovery_batch_size']),
+        'known_case_urls':[c['url'] for c in ledger.values() if c['provider']==provider],
+        'completed_case_urls':[r['source_url'] for r in records.values() if r['provider']==provider],
+        'scope':'Natural listing prefix only. Include old known URLs in their listing slots without re-reading/reclassifying them. Never use old discovery/inventory order as proof of natural listing order. No date checks, case searches, replacement cases or other archives.'}
+    cached,_=saved_discovery_response(base,state,key)
+    context['require_continuation_proof']=state.get('research_policy',{}).get('listing_navigation_version')==2
+    before_positions={r['listing_position'] for r in universe['entries']}
+    obj=invoke(base,state,2,key,context,timeout,cli)
+    if obj is None:return False
+    if commit_inaccessible_listing(base,state,key,provider,context,obj):return True
+    if obj.get('order_verified') is False and cached is not None:
+        obj=recover_saved_listing_cards(base,key,provider,context,obj)
+    if obj.get('order_verified') is not True:
+        raise RunError('Accurate first-30 listing order could not be established. Stop; do not substitute old discovery order.','validation')
+    unit_limit=min(30,state['research_policy']['discovery_batch_size'])
+    # A replay may include positions streamed before a crash, so compare it to
+    # its bounded unit rather than the now-smaller remaining slot count.
+    max_rows=unit_limit if cached is not None else context['max_cases']
+    if type(obj.get('listing_exhausted')) is not bool or type(obj.get('has_more')) is not bool or not isinstance(obj.get('next_cursor'),str) or len(obj['cases'])>max_rows:
+        raise RunError('Invalid bounded listing continuation.','validation')
+    commit_context=dict(context,max_cases=max_rows)
+    for item in obj['cases']:
+        commit_listing_candidate(base,state,key,commit_context,item)
+        if item.get('url') is not None and item.get('reading_depth')=='substantive':commit_discovered_case(base,state,key,commit_context,item)
+    require_listing_decisions(universe)
+    added_positions={r['listing_position'] for r in universe['entries']}-before_positions
+    if ((cached is None or commit_context.get('_listing_duplicates',0)==len(obj['cases'])) and obj['cases'] and not added_positions and
+        before_positions and (commit_context.get('_listing_duplicates',0)==len(obj['cases']) or
+                              all(r['listing_position'] in before_positions for r in obj['cases']))):
+        universe.update(complete=True,coverage_status='incomplete',continuation_limitation='Observed continuation repeated only previously selected source cards; no advancing entries verified.')
+        checkpoint_job(state,key);save(base,state);return True
+    # Fresh captures attest the observed continuation. Old cached pages keep
+    # their original replay contract; no completed listing is reconstructed.
+    if (cached is None or context['require_continuation_proof']) and not context.get('listing_only'):
+        proof_urls={r['listing_url'] for r in obj['cases']}
+        if not proof_urls:proof_urls.update(c['listing_url'] for c in universe['entries'][-1:])
+        if universe['cursor'].startswith(('https://','http://')):proof_urls.add(universe['cursor'])
+        proofs=list(context.get('_listing_proofs',{}).values())
+        for url in proof_urls:proofs.extend(research.captures_for(base,provider,url))
+        continuations=[c.get('continuation',{}) for c in proofs if c.get('role')=='listing']
+        cursor=obj['next_cursor'].strip()
+        continuation=next((c for c in continuations if c.get('evidence') and
+            ((obj['listing_exhausted'] and c.get('kind')=='exhausted') or
+             (not obj['listing_exhausted'] and c.get('target')==cursor and c.get('kind') in ('link','load_more','offset','blocked')))),None)
+        if context.get('require_continuation_proof') and len(universe['entries'])<30 and continuation is None:
+            raise RunError('Listing continuation lacks observed navigation evidence.','validation')
+        if continuation and continuation.get('kind')=='blocked':
+            universe.update(complete=True,coverage_status='incomplete',continuation_limitation=continuation['evidence'])
+            checkpoint_job(state,key);save(base,state);return True
+    complete=len(universe['entries'])==30 or obj['listing_exhausted']
+    if complete:require_listing_decisions(universe,complete=True)
+    if complete and not universe['entries']:
+        raise RunError('No witnessed listing entries: cannot safely establish an empty first-30 universe.','validation')
+    if complete and obj['next_cursor'].strip():
+        raise RunError('Completed first-30 listing must have an empty continuation.','validation')
+    if not complete and obj['next_cursor'].strip() in universe.get('seen_cursors',[])+[universe['cursor']]:
+        universe.update(complete=True,coverage_status='incomplete',continuation_limitation='Observed pagination cursor loops to an already visited continuation; remaining listing order unverified.')
+        checkpoint_job(state,key);save(base,state);return True
+    if not complete and (not obj['has_more'] or not obj['next_cursor'].strip() or not obj['cases']):
+        raise RunError('Listing-only recovery did not establish a safe advancing prefix.','validation')
+    if obj['listing_exhausted'] and obj['has_more']:
+        raise RunError('Listing exhaustion conflicts with continuation.','validation')
+    universe.setdefault('seen_cursors',[]).append(universe['cursor'])
+    universe.update(coverage_status='boundary_reached' if len(universe['entries'])==30 else 'exhausted' if complete else 'continuing',complete=complete,page=universe['page']+1,cursor='' if complete else obj['next_cursor'].strip())
+    checkpoint_job(state,key);save(base,state)
+    print(f'Listing universe {provider}: {len(universe["entries"])} / 30 entries; verified order; complete={complete}.')
+    return True
+
+
 def discovery_step(base,state,timeout,cli):
     apply_case_corrections(base,state)
     efficient=bool(state.get('research_policy'))
     if efficient:recover_case_work(base,state)
+    if state.get('research_policy',{}).get('first_listing_entries'):
+        return listing_discovery_step(base,state,timeout,cli)
     path=inventory_path(base);scope=research_scope(base)
     inventory=read_json(path) if path.exists() else {}
     progress_path=discovery_path(base)
@@ -1108,7 +2112,7 @@ def discovery_step(base,state,timeout,cli):
                                     'excluded':sum(c['decision']=='excluded' for c in decisions.values()),
                                     'unresolved':sum(c['decision']=='unresolved' for c in decisions.values())}
         if efficient:
-            state['screening_summary']['providers']=[{k:v for k,v in row.items() if k not in ('pending','order','last_selected')}
+            state['screening_summary']['providers']=[{k:v for k,v in row.items() if k not in ('pending','resolution_pending','order','last_selected')}
                                                     for row in plan['coverage']]
         state['phase']='stage3';save(base,state);return True
     provider=plan['provider'] if efficient else remaining[0]
@@ -1124,7 +2128,8 @@ def discovery_step(base,state,timeout,cli):
     if state.get('dataset_revision'):key+='_dataset_'+state['dataset_revision']
     if page['page']>1:key+=f'_page_{page["page"]:03d}'
     product=provider_scope(base,state,provider)
-    cached_legacy=(base/'results'/f'{key}.json').exists() and state['jobs'].get(key,{}).get('status') in ('returned','complete')
+    cached_response,cached_modern=saved_discovery_response(base,state,key)
+    cached_legacy=cached_response is not None and not cached_modern
     known_urls=list(dict.fromkeys([c['url'] for c in inventory.get(provider,[])]+[c['url'] for c in decisions.values() if c['provider']==provider]))
     known_window=research.inventory_window(known_urls,dict(research.POLICY,**state['research_policy'])) if efficient else known_urls
     obj=invoke(base,state,2,key,{'target':state['company'],'target_website':state['website'],
@@ -1162,15 +2167,18 @@ def discovery_step(base,state,timeout,cli):
             atomic_json(base/'research'/'discovery_completion_notes'/f'{key}.json',{'reported_next_cursor':cursor,'completion':completion})
             cursor=''
     else:cursor=''
-    if efficient and sum(c.get('reading_depth')=='substantive' for c in obj['cases'])>state['research_policy']['review_batch_size']:
-        raise RunError('Discovery exceeded the substantive reading budget; inventory budget does not authorize unlimited deep reads.','validation')
+    recovery=None;items=obj['cases']
+    if efficient and sum(c.get('reading_depth')=='substantive' for c in items)>state['research_policy']['review_batch_size']:
+        if not cached_modern or cached_response!=obj:
+            raise RunError('Discovery exceeded the substantive reading budget; inventory budget does not authorize unlimited deep reads.','validation')
+        items,recovery_path,recovery,finished=discovery_recovery_unit(base,state,key,provider,product,obj,page)
     cases=[];seen={};updates={}
-    for item in obj['cases']:
+    for item in items:
         if not isinstance(item,dict) or any(not isinstance(item.get(k),str) for k in ('customer','title','url')):
             raise RunError('Invalid case inventory row','validation')
         url=norm_url(item['url']);cid=case_id(provider,url)
         case={'id':cid,'provider':provider,'url':url,'customer':item['customer'],'title':item['title']}
-        if efficient and item.get('reading_depth')=='substantive':
+        if efficient and item.get('reading_depth')=='substantive' and recovery is None:
             commit_discovered_case(base,state,key,{'approved_provider':provider,'max_cases':plan['max_cases'],'competing_product':product},item)
             decisions=read_json(ledger_path);inventory=read_json(path)
         if cid in seen:
@@ -1201,6 +2209,12 @@ def discovery_step(base,state,timeout,cli):
     saved=inventory.setdefault(provider,[]);known_ids={c['id'] for c in saved}
     saved.extend(c for c in cases if c['id'] not in known_ids)
     atomic_json(path,inventory)
+    if recovery is not None:
+        atomic_json(recovery_path,recovery)
+        if not finished:
+            save(base,state)
+            print(f'Saved discovery recovery {provider}: {recovery["offset"]}/{recovery["total"]} candidates accounted for; cursor unchanged.')
+            return True
     progress[provider]=dict(page,page=page['page']+1,cursor=cursor,
                             seen_cursors=page['seen_cursors']+[page['cursor']],
                             complete=not obj.get('has_more',False))
@@ -1344,6 +2358,11 @@ def validate_analysis(stage,markdown,database,analyses):
 
 def step(base,state,timeout,cli):
     phase=state['phase']
+    if phase=='url_recovery':
+        return __import__('url_recovery').step(sys.modules[__name__],base,state,timeout,cli)
+    if phase=='finish_collected':
+        import finish_collected
+        return finish_collected.step(sys.modules[__name__],base,state,timeout,cli)
     if phase in ('stage1','stage1_revision'):
         revision=state.get('landscape_revision') if phase=='stage1_revision' else None
         key='stage1_revision_'+revision['id'] if revision else 'stage1'
@@ -1377,6 +2396,14 @@ def step(base,state,timeout,cli):
         progressed=workspace.reconcile_dataset(base,state,atomic_json)
         save(base,state);return progressed
     if phase=='stage3':
+        if state.get('research_policy'):recover_case_work(base,state)
+        # Older unfinished runs may have advanced on enumeration completion.
+        # Return pending slot work to normal Stage 2 before finalizing batches;
+        # explicit partial completion and completed/publication phases keep their
+        # saved contracts and are never reopened here.
+        if state.get('research_policy',{}).get('first_listing_entries') and not state.get('early_completion'):
+            if any(r.get('resolution_pending') for r in coverage_plan(base,state)['coverage']):
+                state['phase']='stage2';save(base,state);return True
         if not workspace.ensure_sync(base,state,ordered_records(base),atomic_json,flush=False):
             save(base,state);return False
         batches=read_json(base/'batches.json'); records_path=base/'extracted.json'
@@ -1485,6 +2512,33 @@ def inspect(args):
     print('Folder:',base)
 
 
+def narrow_approval(args):
+    """Remove unstarted providers without rewriting research or clearing pauses."""
+    with locked(args.id) as base:
+        state=read_state(base)
+        phase=state.get('paused_from') if state['phase'].startswith('paused') else state['phase']
+        if phase!='stage2' or state.get('workspace_pending') or state.get('workspace_sheet'):
+            raise RunError('Approval narrowing requires early discovery before Workspace publication.')
+        requested={n.strip().casefold() for n in args.remove.split(';') if n.strip()}
+        known={p.casefold():p for p in state['approved_providers']}
+        if not requested or requested-set(known) or state['company'].casefold() in requested:
+            raise RunError('Specify approved competitor names to remove; the target cannot be removed.')
+        removed={known[n] for n in requested}
+        # Evidence-bearing providers require the full universe reconciliation path.
+        for path in (inventory_path(base),screening_path(base),discovery_path(base),base/'extracted.json'):
+            data=read_json(path) if path.exists() else {}
+            if any(key in removed or isinstance(value,dict) and value.get('provider') in removed
+                   for key,value in data.items()):
+                raise RunError('A removed provider already has checkpoints; use universe reconciliation.')
+        backup=backup_run(base,'before_approval_narrowing')
+        approved=[p for p in state['approved_providers'] if p not in removed]
+        state.setdefault('approval_corrections',[]).append({'removed':sorted(removed),'backup':backup,'at':utc()})
+        state['approved_providers']=approved
+        atomic_json(base/'approved_universe.json',approved)
+        save(base,state)
+        print('Approval narrowed; pause and research checkpoints preserved. Removed:',', '.join(sorted(removed)))
+
+
 def approve(args):
     performance.event(run_dir(args.id),1,'human',action='competitor_approval')
     with locked(args.id) as base:
@@ -1517,11 +2571,11 @@ def run(args):
             return
         n=0
         while n < args.max_tasks:
-            if s['phase'] in ('awaiting_approval','complete'):
+            if s['phase'] in ('awaiting_approval','complete','url_recovery_complete'):
                 print('STOP:',s['phase']);break
             if s.get('workspace_pending'):
                 print('WORKSPACE ACTION:',base/'workspace'/f'{s["workspace_pending"]["id"]}.request.json');break
-            if s['phase'] not in ('stage1','stage1_revision','reconcile_universe','reconcile_sheet','stage2','stage3','needs_google_integration','finalize_sheet','stage4','stage5','stage6','stage7','publish_report','organize_doc','revise_doc'):
+            if s['phase'] not in ('url_recovery','finish_collected','stage1','stage1_revision','reconcile_universe','reconcile_sheet','stage2','stage3','needs_google_integration','finalize_sheet','stage4','stage5','stage6','stage7','publish_report','organize_doc','revise_doc'):
                 raise RunError('Unrecognized stage: '+s['phase'])
             phase=s['phase']
             before_attempts=sum(j.get('attempts',0) for j in s['jobs'].values())
@@ -1535,6 +2589,11 @@ def run(args):
                 latest=max(s['jobs'].values(),key=lambda j:j.get('last_started',''),default=None)
                 if latest is not None and latest['status'] in ('running','returned'):
                     latest['status']='paused';latest['error_kind']=kind;latest['last_error']=str(exc)
+                    if latest.get('last_execution'):
+                        path=base/latest['last_execution']
+                        metadata=read_json(path);metadata['failure']={'type':type(exc).__name__,'message':str(exc),'kind':kind,'boundary':'parent_validation'}
+                        atomic_json(path,metadata)
+                        performance.event(base,phase,'worker_error',key=metadata['key'],error_type=type(exc).__name__,message=str(exc),error_kind=kind)
                 save(base,s)
                 print('VALIDATION STOP:',exc,file=sys.stderr)
                 break
@@ -1779,14 +2838,25 @@ def revise_doc(args):
         save(base,state);print('Editorial revision queued for the same native document and tab IDs; no research/model workers launched.')
 
 
+def print_usage_report(args):
+    import usage_report
+    report=usage_report.build(run_dir(args.id),args.sessions_root,args.worker)
+    print(usage_report.markdown(report) if args.format=='markdown' else json.dumps(report,indent=2))
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     sub=ap.add_subparsers(dest='command',required=True)
     x=sub.add_parser('init');x.add_argument('--company',required=True);x.add_argument('--website',required=True);x.add_argument('--id');x.set_defaults(func=create_run)
     x=sub.add_parser('status');x.add_argument('id');x.set_defaults(func=inspect)
     x=sub.add_parser('upgrade-efficiency',help='Back up and upgrade a saved run without resuming research');x.add_argument('id');x.set_defaults(func=enable_efficiency)
+    x=sub.add_parser('enable-listing-boundary',help='Back up and restrict unfinished research to first 30 listing entries without launching workers');x.add_argument('id');x.set_defaults(func=enable_listing_boundary)
     x=sub.add_parser('coverage',help='Inspect the progressive coverage plan without research');x.add_argument('id');x.set_defaults(func=show_coverage)
     x=sub.add_parser('configure-publication',help='Configure native Sheet write groups');x.add_argument('id');x.add_argument('--batch-size',type=int,default=100);x.set_defaults(func=configure_publication)
+    x=sub.add_parser('usage-report',help='Read worker and available Codex session usage without running work')
+    x.add_argument('id');x.add_argument('--worker',help='Worker key prefix');x.add_argument('--sessions-root',type=Path,default=Path(os.environ.get('CODEX_HOME',str(Path.home()/'.codex')))/'sessions')
+    x.add_argument('--format',choices=('json','markdown'),default='json')
+    x.set_defaults(func=lambda args:print_usage_report(args))
     x=sub.add_parser('metrics',help='Read observed efficiency metrics without running work');x.add_argument('id');x.set_defaults(func=lambda args:print(json.dumps(performance.summary(run_dir(args.id)),indent=2)))
     x=sub.add_parser('organize-doc',help='Organize the verified report into native tabs without model calls');x.add_argument('id');x.add_argument('--readback');x.set_defaults(func=organize_doc)
     x=sub.add_parser('revise-doc',help='Publish an editorial report version to the existing five tabs');x.add_argument('id');x.add_argument('--file',required=True);x.add_argument('--readback',required=True);x.set_defaults(func=revise_doc)
@@ -1796,8 +2866,13 @@ def main():
     x=sub.add_parser('review-synthesis-report',help='Save audited editorial corrections without rerunning analysis');x.add_argument('id');x.add_argument('--file',required=True);x.add_argument('--reason',required=True);x.set_defaults(func=review_synthesis_report)
     x=sub.add_parser('configure-research',help='Configure review batch size without resuming research');x.add_argument('id');x.add_argument('--review-batch-size',type=int);x.add_argument('--discovery-batch-size',type=int);x.add_argument('--max-source-attempts',type=int);x.add_argument('--max-execution-seconds',type=int);x.add_argument('--max-context-bytes',type=int);x.add_argument('--reason');x.set_defaults(func=configure_research)
     x=sub.add_parser('publish-saved',help='Synchronize and read back saved records without resuming research');x.add_argument('id');x.add_argument('--parent-folder-id');x.set_defaults(func=publish_saved)
+    x=sub.add_parser('finish-collected',help='Explicitly end discovery with partial coverage, optionally recovering saved observed cards');x.add_argument('id');x.add_argument('--reason',required=True);x.add_argument('--recovery-file');x.set_defaults(func=lambda a:__import__('finish_collected').start(sys.modules[__name__],a))
     x=sub.add_parser('list');x.set_defaults(func=lambda a:print('\n'.join(p.name for p in RUNS.iterdir() if (p/'state.json').exists()) if RUNS.exists() else 'No projects'))
     x=sub.add_parser('approve');x.add_argument('id');x.add_argument('--names',required=True,help='Semicolon-separated names from landscape.json');x.set_defaults(func=approve)
+    x=sub.add_parser('narrow-approval',help='Remove unstarted competitors during early discovery, preserving pauses');x.add_argument('id');x.add_argument('--remove',required=True,help='Semicolon-separated approved competitor names');x.set_defaults(func=narrow_approval)
+    x=sub.add_parser('recover-listing-events',help='Validate and persist saved events from interrupted listing-prefix failures without research');x.add_argument('id');x.set_defaults(func=recover_listing_events)
+    x=sub.add_parser('recover-urls',help='Recover witnessed unresolved slots locally without publication or analysis');x.add_argument('id');x.add_argument('--max-tasks',type=int,default=35);x.add_argument('--timeout',type=int,default=1500);x.add_argument('--codex',default='codex');x.set_defaults(func=lambda a:(__import__('url_recovery').start(sys.modules[__name__],a),run(a)))
+    x=sub.add_parser('publish-recovered',help='Hand a finished URL recovery to normal finalization and analysis');x.add_argument('id');x.set_defaults(func=lambda a:__import__('url_recovery').publish(sys.modules[__name__],a))
     x=sub.add_parser('set-scope',help='Set immutable discovery criteria before extraction; preserve earlier inventories');x.add_argument('id');x.add_argument('--file',required=True);x.set_defaults(func=set_scope)
     x=sub.add_parser('redo-provider',help='Explicitly redo one approved provider before extraction, retaining history');x.add_argument('id');x.add_argument('--provider',required=True);x.set_defaults(func=redo_provider)
     x=sub.add_parser('exclude-case',help='Archive a verified scope error during discovery before publication');x.add_argument('id');x.add_argument('--case-id',required=True);x.add_argument('--reason',required=True);x.set_defaults(func=exclude_case)

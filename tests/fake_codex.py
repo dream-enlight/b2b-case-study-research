@@ -34,6 +34,21 @@ if mode=='offline':
  sys.exit(1)
 task=prompt.split('TASK ASSIGNMENT (machine generated):\n')[1].split('\n\nRUNNER EXECUTION OVERRIDE:')[0]
 assign=json.loads(task)
+streamed=[]
+original_print=print
+def print(*values,**kwargs):
+ if assign.get('compact_receipts') and len(values)==1 and isinstance(values[0],str):
+  try:
+   event=json.loads(values[0]);item=event.get('item',{})
+   if event.get('type')=='item.completed' and item.get('type')=='agent_message':
+    rem=item.get('text','').lstrip();decoder=json.JSONDecoder()
+    while rem:
+     obj,end=decoder.raw_decode(rem)
+     for field in ('discovered_case','case_result','extracted_record'):
+      if field in obj:streamed.append((field,obj[field]))
+     rem=rem[end:].lstrip()
+  except (ValueError,TypeError):pass
+ return original_print(*values,**kwargs)
 def fixture_record(case):
  return {'provider':case['provider'],'source_url':case['url'],'customer':case.get('customer','Acme'),'people':'Chris — CTO, quoted about evaluation','company_profile':'A B2B application vendor.','buying_situation':'The vendor needed to integrate its customer workflow with external systems; its previous manual approach could not scale.','status':'complete','note':''}
 if 'ANALYSIS response JSON schema:' in prompt:
@@ -134,13 +149,22 @@ elif 'Stage 2 batch review response JSON schema:' in prompt:
   row={'id':case['id'],'decision':decision,'reason':'Synthetic review: '+decision,'evidence':'Synthetic saved source evidence.',
        'record':fixture_record(case) if decision=='relevant' else None,'contribution':'Synthetic distinct workflow evidence.'}
   if mode=='batch_wrong_identity' and i==1:row['id']='unassigned'
+  if mode=='batch_empty_customer' and i==0:row['record']['customer']=''
   messages=[json.dumps({'source_capture':{'url':case['url'],'coverage':'excerpt','text':'Synthetic reusable evidence: a B2B application vendor required workflow integration.'}}),json.dumps({'case_result':row})]
   if mode=='combined_interrupt':messages=['\n'.join(messages)]
+  if mode in ('envelope','envelope_interrupt'):
+   messages=[json.dumps({'source_captures':[json.loads(messages[0])['source_capture']],'case_result':row})]
+  if mode=='unrelated_failure' and i==0:
+   print(json.dumps({'type':'item.completed','item':{'type':'web_search','action':{'type':'open','url':'https://unrelated.example.com/failure.pdf'}}}),flush=True)
   for text in messages:print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':text}}),flush=True)
   rows.append(row)
   if mode=='batch_budget' and i==1:
    for j in range(2):print(json.dumps({'type':'item.completed','item':{'type':'web_search','action':{'type':'open','url':'https://example.com/budget/'+str(j)}}}),flush=True)
-  if mode in ('batch_interrupt','combined_interrupt') and i==1:
+  if mode=='actual_runtime_budget' and i==1:
+   print(json.dumps({'type':'item.completed','item':{'type':'web_search','action':{'type':'other'},'results':[
+     {'url':'https://example.com/budget/0','ref_id':'turn1view0','snippet':'Total lines: 300'},
+     {'url':'https://example.com/budget/1','ref_id':'turn1view1','snippet':'Total lines: 100'}]}}),flush=True)
+  if mode in ('batch_interrupt','combined_interrupt','envelope_interrupt') and i==1:
    print(json.dumps({'type':'error','message':'Usage limit reached after two saved cases.'}),flush=True);sys.exit(1)
  obj={'results':rows}
 elif 'Stage 2 review response JSON schema:' in prompt:
@@ -166,6 +190,13 @@ elif 'Stage 2 response JSON schema:' in prompt:
    if i==1:case.update(title='Unrelated email product story',reason='Email engagement is a separate business line.',evidence='Category: email engagement.')
  if mode=='missing_relevance':obj['cases'][0]['evidence']=''
  if assign.get('efficient_worker'):
+  if assign.get('first_listing_entries'):
+   listing='https://stories.example.com/customer-stories'
+   for j,case in enumerate(obj['cases'],offset+1):case.update(listing_position=j,listing_url=listing,url_status='resolved')
+   print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps({'source_capture':{'url':listing,'role':'listing','coverage':'excerpt','text':'Synthetic natural listing order.','continuation':{'kind':'offset' if obj['has_more'] else 'exhausted','target':obj['next_cursor'],'evidence':'Synthetic observed listing offset/ending.'},'order_verified':mode!='unverified_listing',
+     'ordered_entries':[{'position':case['listing_position'],'url':case['url']} for case in obj['cases']]}})}}),flush=True)
+   obj.update(order_verified=mode!='unverified_listing',listing_exhausted=not obj['has_more'])
+   if end>=30:obj.update(has_more=False,next_cursor='')
   for case in obj['cases']:
    case.update(record=None,reading_depth='lightweight',contribution='')
    if mode in ('substantive_discovery','stream_only_discovery'):
@@ -200,6 +231,18 @@ else:
  else:obj={'markdown':'## Synthetic fixture analysis\nOne synthetic profile; no real research.\n\n| Category | Profiles | Share |\n| --- | --- | --- |\n| Test fixture | 1 | 100% |\n'}
  if mode=='tool_use':print(json.dumps({'type':'item.completed','item':{'type':'command_execution','command':'curl https://example.com'}}),flush=True)
  if mode=='invalid':obj={'markdown':''}
+if assign.get('compact_receipts'):
+ field={'discover':'cases','review_batch':'results','extract_batch':'records'}.get(assign['task'])
+ if field:
+  refs=[]
+  for ty,row in streamed:
+   if field=='cases' and ty=='discovered_case':ref=row['url']
+   elif field=='results' and ty=='case_result':ref=row['id']
+   elif field=='records' and ty=='extracted_record':ref=next(c['id'] for c in assign['assigned_cases'] if c['url']==row['source_url'] and c['provider']==row['provider'])
+   else:continue
+   if ref not in refs:refs.append(ref)
+   obj[field]=[value for value in obj[field] if value!=row]
+  obj['completed_ids']=refs
 out.parent.mkdir(parents=True,exist_ok=True)
-out.write_text(json.dumps(obj))
+out.write_text('{broken' if mode=='invalid_final_json' else json.dumps(obj))
 print(json.dumps({'type':'turn.completed','usage':{'input_tokens':0,'output_tokens':0}}),flush=True)

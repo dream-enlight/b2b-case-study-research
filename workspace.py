@@ -74,6 +74,7 @@ def request(base,state,kind,tool,args,details,atomic_json):
     return False
 
 def title(state,kind):
+    if kind=='Case-study research':return f'{state["company"]} | Working ICP'
     token=digest([state['id'],state['created_at']])[:12]
     return f'{state["company"]} — {kind} [research-{token}]'
 
@@ -327,6 +328,12 @@ def apply_response(base,state,pending,result,atomic_json):
             elif isinstance(x,list):
                 for v in x:walk(v)
         walk(data.get('tabs') or data.get('body',{}))
+        def bullet_count(x):
+            if isinstance(x,dict):return int('bullet' in x.get('paragraph',{}))+sum(bullet_count(v) for v in x.values())
+            if isinstance(x,list):return sum(bullet_count(v) for v in x)
+            return 0
+        if bullet_count(data.get('tabs') or data.get('body',{}))<expected.get('bullets',0):
+            raise WorkspaceError('Native Doc lost bullet formatting during conversion.')
         compact=lambda s:re.sub(r'\s+','',s)
         if compact(''.join(texts))!=compact(expected['text']): raise WorkspaceError('Native Doc text readback differs from complete report.')
         if len(tables)!=expected['tables'] or len(headings)<expected['headings']:
@@ -365,7 +372,7 @@ def apply_response(base,state,pending,result,atomic_json):
 
 def render_report(markdown):
     """Small Markdown subset -> native import HTML, including real frequency tables."""
-    lines=markdown.splitlines();parts=[];text=[];tables=0;headings=0;i=0
+    lines=markdown.splitlines();parts=[];text=[];tables=0;headings=0;i=0;bullets=0
     def inline(value):
         value=re.sub(r'\[([^\]]+)\]\((https?://[^\s)]+)\)',r'\1 (\2)',value)
         return re.sub(r'[*`]', '', value)
@@ -384,6 +391,12 @@ def render_report(markdown):
                 tag='th' if j==0 else 'td'
                 parts.append('<tr>'+''.join(f'<{tag}>{html.escape(c)}</{tag}>' for c in row)+'</tr>');text.extend(row)
             parts.append('</table>');tables+=1;continue
+        if re.match(r'^[-*]\s+',line):
+            parts.append('<ul>')
+            while i<len(lines) and re.match(r'^[-*]\s+',lines[i].strip()):
+                value=inline(re.sub(r'^[-*]\s+','',lines[i].strip()))
+                parts.append('<li>'+html.escape(value)+'</li>');text.append(value);bullets+=1;i+=1
+            parts.append('</ul>');continue
         match=re.match(r'^(#{1,6})\s+(.+)',line)
         value=inline(match[2] if match else re.sub(r'^[-*]\s+','',line))
         if match:
@@ -392,7 +405,7 @@ def render_report(markdown):
         else:parts.append('<p>'+html.escape(value)+'</p>')
         text.append(value);i+=1
     doc='<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial;font-size:11pt}h1{font-size:20pt;page-break-before:always}h1:first-child{page-break-before:auto}h2{font-size:15pt}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d9dfe5;padding:6px;vertical-align:top}th{background:#edf2f5;text-align:left}</style></head><body>'+''.join(parts)+'</body></html>'
-    return doc,{'text':'\n'.join(text),'tables':tables,'headings':headings}
+    return doc,{'text':'\n'.join(text),'tables':tables,'headings':headings,'bullets':bullets}
 
 def publish_report(base,state,atomic_json,atomic_text):
     if state.get('workspace_pending'):return False
@@ -400,6 +413,15 @@ def publish_report(base,state,atomic_json,atomic_text):
     if digest(report)!=checksum or report['database_sha256']!=state['finalized_sheet_sha256'] or (base/'report.md').read_text()!=report['markdown']:
         raise WorkspaceError('Final report checksum/provenance mismatch.')
     if state.get('workspace_document'):
+        if state.get('recovered_publication') and not state.get('editorial_report'):
+            payload={'markdown':report['markdown'],'database_sha256':state['finalized_sheet_sha256'],
+                     'previous_sections':state['recovered_publication']['previous_sections']}
+            payload['sha256']=digest(payload)
+            path=base/'presentation'/'editorial'/('report_'+payload['sha256'][:16]+'.json')
+            atomic_json(path,payload);state['editorial_report']={'path':str(path),'sha256':payload['sha256']}
+            state['phase']='revise_doc'
+            import document_tabs
+            return document_tabs.inspect_request(base,state,atomic_json)
         if state.get('native_doc_tabs'):
             import document_tabs
             return document_tabs.start(base,state,atomic_json)

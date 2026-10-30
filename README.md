@@ -38,19 +38,35 @@ This is descriptive research. The agent does not recommend target segments, posi
 ## Workflow and architecture
 
 1. Research the target's capabilities and shared customer need; propose competing products for human approval.
-2. Discover and screen published cases across approved providers, saving decisions and continuation checkpoints.
+2. Enumerate the first 30 distinct cards in each approved provider’s primary customer-story listing, in natural order (or fewer at a genuine end). Screen those slots and save decisions and continuation checkpoints.
 3. Extract assigned evidence once and synchronize verified five-column Sheet rows.
 4. Freeze the complete evidence database; build one global taxonomy, using bounded hierarchical synthesis for large inputs.
 5. Classify batches against compact fixed category definitions, review Other observations once, and compute profile unions and frequencies in Python.
 6. Synthesize the report, validate its counts and evidence associations, and publish/verify the native Doc tabs.
 
-`runner.py` owns state and recovery; `research.py` handles research memory; the analysis/taxonomy modules handle saved evidence; `report_roles.py` and `report_quality.py` derive and validate report counts; `workspace.py` and `document_tabs.py` coordinate Google operations performed by the Codex operator. `AGENTS.md` supplies the operator contract; [APP_WORKFLOW.md](APP_WORKFLOW.md) describes the execution loop. No web app, backend or custom OAuth service is included.
+`runner.py` owns state and recovery; `research.py` handles research memory and slot scheduling; `url_recovery.py` bounds missing-URL recovery; the analysis/taxonomy modules handle saved evidence; `report_roles.py` and `report_quality.py` derive and validate report counts; `workspace.py` and `document_tabs.py` coordinate Google operations performed by the Codex operator. `AGENTS.md` supplies the operator contract; [APP_WORKFLOW.md](APP_WORKFLOW.md) describes the execution loop. No web app, backend or custom OAuth service is included.
+
+## Research checkpoints and recovery
+
+New runs finish listing metadata enumeration before resolving missing source URLs. Excluded, inaccessible and unresolved cards consume their listing positions; the agent does not replace them with later stories. Distinct cards can share a source URL while retaining separate slot identities, with one extraction and Sheet row for that source. Repeated cards identified by the same stable card ID count once. A blocked listing closes with explicit incomplete coverage rather than being repeatedly reopened. Historical runs retain their saved collection policy unless explicitly migrated.
+
+Deep review defaults to 20 assigned cases per worker, separately from metadata discovery; publication groups remain up to 100 complete records. Workers receive the active task, product scope and relevant saved evidence. A substantive reading emits its complete extraction immediately. Combined source-capture and case checkpoints persist completed outcomes even if the worker later fails. Resume replays saved outputs before launching new work; completed records remain durable. Missing URLs have bounded recovery attempts and terminal outcomes. Quota exhaustion stops until an explicit resume.
+
+For a read-only account of worker activity:
+
+```sh
+python3 runner.py usage-report RUN_ID --format markdown
+# Optional: restrict workers or locate locally saved Codex sessions
+python3 runner.py usage-report RUN_ID --worker KEY_PREFIX --sessions-root /path/to/sessions
+```
+
+JSON is the default format. Reports distinguish cumulative input/cache/output counters from peak request context, and include tool activity, repeated accesses, saved outcomes and recovery metadata where available. Missing counters remain unknown; these measurements do not establish a fixed cost or guaranteed savings. See [release notes](RELEASE_NOTES.md) for this update.
 
 ## Usage, cost and limitations
 
 Research and analysis use your configured Codex model and account limits. Work varies with provider inventories, source accessibility and evidence volume; there is no fixed price or guaranteed completion time. The account must support the worker CLI configuration. `python3 runner.py metrics RUN_ID` reports executions, timing and available token/cache counters; unavailable counters stay unknown. Google services have their own permissions and quotas. No separate model-grading agent is part of the normal workflow.
 
-Published customer stories are selected marketing evidence, not a representative market sample. Missing buying reasons and authority remain unknown; post-deployment usage does not prove an original selection reason. A failed PDF is not retried or rescued. Taxonomy and source interpretation can still be wrong; review the evidence and report before relying on findings. Large inventories can take substantial time and account usage.
+Published customer stories are selected marketing evidence, not a representative market sample. Missing buying reasons and authority remain unknown; post-deployment usage does not prove an original selection reason. A failed PDF is not retried or rescued. Taxonomy and source interpretation can still be wrong; review the evidence and report before relying on findings. Source accessibility and evidence depth can still require substantial time and account usage.
 
 ## Offline checks and local data
 

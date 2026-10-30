@@ -62,7 +62,7 @@ class EfficiencyTests(unittest.TestCase):
         ledger=runner.read_json(runner.screening_path(base));self.assertEqual([ledger[c['id']]['decision'] for c in cases],['relevant','relevant','relevant','excluded','unresolved'])
         self.assertEqual(len(s['case_checkpoints']),5)
         a=self.traced_assignments(trace)[0];self.assertEqual(len(a['review_cases']),5)
-        self.assertIn('product_understanding',a);self.assertIn('competing_product',a)
+        self.assertIn('target_scope',a);self.assertIn('competing_products',a)
         before=(base/'extracted.json').read_bytes()
         runner.recover_case_work(base,s);runner.recover_case_work(base,s)
         self.assertEqual((base/'extracted.json').read_bytes(),before)
@@ -408,6 +408,9 @@ class EfficiencyTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 self.modern=True;name='Done' if phase=='stage2' else 'Conflict';rid=name.lower()
                 self.cmd('app',f'Research {name} — https://example.com','--codex',FAKE)
+                # Historical exhaustive-cursor compatibility, not the new
+                # first-30 listing protocol (which requires an empty end cursor).
+                base=runner.run_dir(rid);old=self.state(rid);old['research_policy'].pop('first_listing_entries',None);runner.save(base,old)
                 self.cmd('app','Approve these competitors: Beta Software','--id',rid,'--codex',FAKE,'--max-tasks','1',env={'FAKE_MODE':mode})
                 s=self.state(rid);base=runner.run_dir(rid);self.assertEqual(s['phase'],phase)
                 notes=list((base/'research/discovery_completion_notes').glob('*.json'))

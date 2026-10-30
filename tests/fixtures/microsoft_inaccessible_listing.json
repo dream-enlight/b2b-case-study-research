@@ -1,0 +1,36 @@
+{
+  "capture": {
+    "url": "https://suite.example/en-us/customers/search",
+    "role": "listing",
+    "coverage": "excerpt",
+    "text": "Placeholder for Title. Synthetic listing exposes template placeholders, no actual story cards and no usable pagination destinations. This is an access limitation, not exhaustion.",
+    "positions_verified": false,
+    "ordered_entries": [],
+    "continuation": {
+      "kind": "blocked",
+      "target": "https://suite.example/en-us/customers/search",
+      "evidence": "Placeholder for Title. Synthetic listing exposes template placeholders, no actual story cards and no usable pagination destinations. This is an access limitation, not exhaustion."
+    },
+    "provider": "Example Suite",
+    "origin": "Synthetic evidence for this regression fixture."
+  },
+  "response": {
+    "cases": [],
+    "has_more": false,
+    "next_cursor": "https://suite.example/en-us/customers/search",
+    "completed_ids": [],
+    "order_verified": false,
+    "listing_exhausted": false
+  },
+  "product": {
+    "name": "Example Suite",
+    "product": "Example Process Mining",
+    "reason": "Synthetic evidence for this regression fixture.",
+    "sources": [
+      "https://product.example/overview",
+      "https://product.example/overview",
+      "https://product.example/overview"
+    ],
+    "confidence": "confirmed"
+  }
+}

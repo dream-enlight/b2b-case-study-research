@@ -56,7 +56,7 @@ Do not change original strength; semantic_kind is a separate interpretation.
 For global_synthesis_report:
 Produce a neutral, descriptive competitive case-study research report. Organize,
 quantify, consolidate and explain what the saved evidence shows; business decisions
-belong to the human researcher. Use clear evidence-first presentation and
+belong to the human researcher. Use the output contract’s clear evidence-first presentation and
 retain contextual depth, source reliability, chronology and uncertainty.
 
 Answer only: what company types appear, what they do and how often; which people,
@@ -83,8 +83,7 @@ caveat. Explain the strongest recurring descriptive patterns with counts, shares
 and clear definitions. All summary figures must agree with the detailed tables.
 Make numerical claims auditable: use `Eligible cases: N; Preserved profiles: N;
 Providers: N; Inaccessible cases: N` for coverage. For category frequencies use
-the exact detailed-table row label and `Label: N (P%)`, separated by sentences or
-semicolons. Do not introduce other numerical claims in the Overview. These are
+the exact detailed-table row label and `Label: N (P%)`, as individual Markdown bullet points. Do not introduce other numerical claims in the Overview. These are
 compact descriptive facts, not a separate strategy section.
 Do not include a GTM implication section, product-positioning claims, prioritization
 advice or people-to-engage recommendations. Provider concentration, selection bias,
@@ -177,3 +176,26 @@ Do not repeat frequency tables in the Overview; use the compact claims above.
 No hidden weighting or exclusions. Distinguish observations, derived frequencies
 and carefully qualified descriptive inferences. Approved product context defines
 scope and factual capability limits, not positioning or selling recommendations.
+
+Overview presentation: keep the internal # Overview boundary. Publication displays
+its title as [Company] | Working ICP, a descriptive working summary only. Use H2
+headings Company profiles, People involved, Buying situations and Methodological
+caveat; short explanatory paragraphs and native bullet lists for selected category
+frequencies. Write each frequency as `- Exact table label: N (P%)` on its own line,
+not a dense paragraph of semicolon-separated categories. Keep coverage concise
+using the established exact labels and verified denominators. Distinguish documented
+problems/pressures, goals, stated requirements, observed usage and later outcomes;
+usage does not establish an original buying motive. Formal roles, involvement and
+purchasing authority remain separate. Preserve full detail in the other four tabs.
+
+Use collection_coverage when supplied: a closed provider with listing_coverage_status
+`incomplete` and listing_access_status `inaccessible` has inaccessible listing coverage.
+Zero observed cards is not evidence of zero customer stories or listing exhaustion;
+the catalog size remains unknown. Name each such provider and preserve its specific
+continuation_limitation in Methods and sources, including rendering/access failures.
+A closed provider with listing_coverage_status
+`incomplete` means continuation was blocked, not genuine listing exhaustion. Preserve
+the specific continuation_limitation and unresolved-card coverage in Methods; mention
+partial coverage briefly in the Overview caveat. Content-confirmed story associations
+are distinct from verified listing hrefs. Do not imply a uniform complete first-30
+sample where any provider stopped early with incomplete coverage.

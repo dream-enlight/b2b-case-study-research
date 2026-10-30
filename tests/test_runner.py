@@ -508,7 +508,10 @@ class RunnerTests(unittest.TestCase):
         restored=runner.read_json(base/'inventory.json')['Beta Software']
         self.assertEqual([c['url'].rsplit('/',1)[-1] for c in restored],['0'])
         key=next(c['discovery_key'] for c in decisions.values() if c['provider']=='Beta Software')
-        self.assertEqual(self.state()['jobs'][key]['status'],'complete')
+        # Restoring individual decisions is not the discovery-unit commit:
+        # synchronization stopped us before its cursor/progress update.
+        self.assertEqual(self.state()['jobs'][key]['status'],'returned')
+        self.assertTrue((base/'results'/f'{key}.json').exists())
 
     def test_relevant_review_without_full_record_is_not_marked_complete(self):
         base,env=self.screening_fixture();env['FAKE_MODE']='review_missing_record'

@@ -1,4 +1,4 @@
-Using the approved case-study inventory, research each case study and populate a single Google Sheet using the five-column output contract in docs/output_contract.md.
+Using the approved case-study inventory, research each case study and populate a single Google Sheet following the included five-column database template.
 
 Upgraded workers use the concise research_worker.md quality contract and supplied
 schema instead of opening local references or spreadsheet skills. Use saved source
@@ -28,7 +28,7 @@ The database must contain enough information to support later ICP and buying-sit
 
 Preserve meaningful details and distinctions. Separate the original buying situation from results achieved after implementation. Do not invent missing facts or infer decision-making authority from job titles. Where important information is unavailable, make that clear.
 
-Preserve self-contained source evidence using the five columns listed above; no private reference file is required.
+Follow docs/output_contract.md for writing style, depth and column structure.
 
 **Execution:**
 

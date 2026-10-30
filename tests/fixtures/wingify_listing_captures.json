@@ -1,0 +1,157 @@
+[
+  {
+    "source_log": "Synthetic evidence for this regression fixture.",
+    "capture": {
+      "url": "https://legacy.example/success-stories",
+      "role": "listing",
+      "coverage": "excerpt",
+      "positions_verified": true,
+      "text": "Redirected to https://provider.example/success-stories/. Synthetic listing of twelve cards in natural order; Load More is visible.",
+      "ordered_entries": [
+        {
+          "position": 1,
+          "title": "Synthetic customer story 1",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 2,
+          "title": "Synthetic customer story 2",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 3,
+          "title": "Synthetic customer story 3",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 4,
+          "title": "Synthetic customer story 4",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 5,
+          "title": "Synthetic customer story 5",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 6,
+          "title": "Synthetic customer story 6",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 7,
+          "title": "Synthetic customer story 7",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 8,
+          "title": "Synthetic customer story 8",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 9,
+          "title": "Synthetic customer story 9",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 10,
+          "title": "Synthetic customer story 10",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 11,
+          "title": "Synthetic customer story 11",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 12,
+          "title": "Synthetic customer story 12",
+          "url": null,
+          "url_status": "unresolved"
+        }
+      ]
+    }
+  },
+  {
+    "source_log": "Synthetic evidence for this regression fixture.",
+    "capture": {
+      "url": "https://provider.example/success-stories/page/2",
+      "role": "listing",
+      "coverage": "excerpt",
+      "positions_verified": true,
+      "text": "Synthetic source excerpt: Example Customer uses Example Process mining to understand workflows. Alex Example, Program Director, describes the implementation.",
+      "ordered_entries": [
+        {
+          "position": 13,
+          "title": "Synthetic customer story 13",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 14,
+          "title": "Synthetic customer story 14",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 15,
+          "title": "Synthetic customer story 15",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 16,
+          "title": "Synthetic customer story 16",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 17,
+          "title": "Synthetic customer story 17",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 18,
+          "title": "Synthetic customer story 18",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 19,
+          "title": "Synthetic customer story 19",
+          "url": null,
+          "url_status": "unresolved"
+        },
+        {
+          "position": 20,
+          "title": "Synthetic customer story 20",
+          "url": null,
+          "url_status": "unresolved"
+        }
+      ]
+    }
+  },
+  {
+    "source_log": "Synthetic evidence for this regression fixture.",
+    "capture": {
+      "url": "https://provider.example/success-stories/page/3",
+      "role": "listing",
+      "coverage": "excerpt",
+      "positions_verified": true,
+      "ordered_entries": [],
+      "text": "Synthetic source excerpt: Example Customer uses Example Process mining to understand workflows. Alex Example, Program Director, describes the implementation."
+    }
+  }
+]

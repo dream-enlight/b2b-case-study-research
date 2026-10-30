@@ -4,7 +4,7 @@ Using only the finalized Google Sheet case-study database, analyze the people an
 
 1. Examine the people, job titles and documented involvement recorded in the database.
 2. Write a concise summary explaining the strongest recurring stakeholder patterns, including which functions and documented evaluation, selection, implementation or operation activities appear.
-3. Group people into meaningful role categories based on their functions. Let these categories emerge from the evidence rather than reusing categories from an example project.
+3. Group people into meaningful role categories based on their functions. Let these categories emerge from the evidence rather than reusing predefined categories.
 4. Produce a frequency table, ordered from most to least frequent, containing:
    - Stakeholder role group
    - Typical job titles included
@@ -25,7 +25,7 @@ Using only the finalized Google Sheet case-study database, analyze the people an
 - Distinguish confirmed selection involvement from people merely quoted about results. Do not assume seniority or a job title establishes purchasing authority.
 - Report how many customer profiles contain identifiable stakeholders.
 
-Use the public output contract in docs/output_contract.md for analytical depth, presentation and frequency methodology.
+Follow docs/output_contract.md for analytical depth, presentation and frequency methodology.
 
 Save this analysis separately for inclusion in the final Google Doc. Do not modify the source database or conduct additional web research.
 

@@ -168,6 +168,25 @@ def parse_markdown(markdown):
     return text,headings,tables
 
 
+def bullet_ranges(markdown):
+    text,_,_=parse_markdown(markdown)
+    # Tables become one marker paragraph; only ordinary source lines correspond
+    # to paragraphs in the rendered text. Walk in order (titles may repeat).
+    rendered=text.splitlines(keepends=True);cursor=0;offset=1;result=[]
+    lines=markdown.splitlines();i=0
+    while i<len(lines):
+        line=lines[i].strip()
+        if not line:i+=1;continue
+        if line.startswith('|'):
+            while i<len(lines) and lines[i].strip().startswith('|'):i+=1
+        else:
+            if re.match(r'^[-*]\s+',line):
+                result.append((offset,offset+u16(rendered[cursor].rstrip('\n'))))
+            i+=1
+        offset+=u16(rendered[cursor]);cursor+=1
+    return result
+
+
 def document_replace_plan(data,markdown,*,section=False):
     if not section:ss.validate_report(markdown)
     tid,body=document_body(data)
@@ -186,6 +205,8 @@ def document_replace_plan(data,markdown,*,section=False):
             'namedStyleType':'TITLE' if section and h['level']==1 else 'HEADING_'+str(h['level']),'keepWithNext':True,
             'pageBreakBefore':not section and h['level']==1 and h['text']!='Overview'},'fields':'namedStyleType,keepWithNext,pageBreakBefore'}})
         requests.append({'updateTextStyle':{'range':rng(h['start'],h['end']),'textStyle':{'fontSize':{'magnitude':22 if section and h['level']==1 else 18 if h['level']==1 else 13,'unit':'PT'}},'fields':'fontSize'}})
+    for start,end in bullet_ranges(markdown):
+        requests.append({'createParagraphBullets':{'range':rng(start,end),'bulletPreset':'BULLET_DISC_CIRCLE_SQUARE'}})
     for match in re.finditer(r'https?://[^\s)]+',text):
         url=match[0].rstrip('.,;');start=1+u16(text[:match.start()])
         requests.append({'updateTextStyle':{'range':rng(start,start+u16(url)),

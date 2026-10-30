@@ -1,21 +1,12 @@
-# First public release
+# Publishing updates
 
-Review the source, license and verification notes before publishing. The prepared repository starts on `main` with no commits or remote; it does not inherit a development Git object database. Set a public author identity before creating the first commit.
+Use this public repository checkout and its existing GitHub remote. Never copy the parent development repository’s Git objects, saved research, account logs or private reference files.
 
-1. On GitHub, create a new **public**, empty repository named `b2b-case-study-research`. Do not initialize it with a README, license or `.gitignore`.
-2. Open a terminal in this release repository, or ask Codex to execute the following after you explicitly authorize publication. Replace all three identity/account placeholders:
+1. Fetch the remote and reconcile any newer commits before publishing; never force-push release updates.
+2. Update README.md and RELEASE_NOTES.md to describe observable behavior and compatibility.
+3. Run `python3 scripts/check_setup.py` and `python3 -m unittest discover -s tests -v`. Use synthetic fixtures and simulated tool results; release checks must not launch live research or write to Google Workspace.
+4. Review `git status`, the staged diff and `git diff --cached --check`. Exclude credentials, generated evidence and account-specific paths. The blank seed workbook is intentionally included.
+5. Commit with a public author identity and push the reviewed commit to the existing remote. Use normal GitHub authentication; never embed tokens in source or remote URLs.
+6. Verify the remote branch points to the published commit. A version tag or GitHub Release is optional when explicitly requested.
 
-```sh
-git config --local user.name "YOUR_PUBLIC_AUTHOR_NAME"
-git config --local user.email "YOUR_PUBLIC_OR_GITHUB_NOREPLY_EMAIL"
-git add .
-git diff --cached --check
-git diff --cached --stat
-git commit -m "Initial public release"
-git remote add origin "https://github.com/YOUR_GITHUB_USERNAME/b2b-case-study-research.git"
-git push -u origin main
-```
-
-Use your normal GitHub authentication; never put a token in the remote URL or source files. Do not copy the parent project's `.git`, research data or verification logs. The blank seed workbook is intentionally included; generated research workbooks and reports are not.
-
-The runtime was checked offline with fictional cases and simulated tool results. Before a real run, confirm Codex worker configuration and the required native Google tool capabilities in your own environment. Publication of this repository does not publish any research results.
+Offline success does not verify a user’s live Codex authentication or Google connector capabilities. Consult docs/google_tools.md before normal operation.

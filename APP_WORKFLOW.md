@@ -1,14 +1,42 @@
 # Codex app operating loop
 
-First verify compatible connected tools using `docs/google_tools.md`. Use the connected Google Drive tools only when their contracts match. No OAuth files, service accounts,
+Use the already-connected Google Drive plugin. No OAuth files, service accounts,
 Google API keys, model API keys or separate paid APIs are part of this project.
 The app is the Google Workspace adapter. Fresh `codex exec` workers do research
 and analysis, never Workspace publication.
 
 ## New-run execution policy
 
-New company runs use taxonomy-first analysis. Existing runs retain their saved
-policy and receipts; do not migrate or rerun them incidentally.
+New company runs select only the first 30 distinct entries in each provider's
+primary customer-story listing, in natural listing order. Irrelevant and failed
+entries consume slots; never replace them or inspect publication dates. Stop at
+30 or verified listing exhaustion. No extra case searches or alternate archives.
+The historical exhaustive-coverage descriptions below remain for replay only.
+`enable-listing-boundary RUN` backs up an unfinished historical run and enables
+the same boundary without changing saved decisions, extractions or Workspace IDs.
+It does not resume research. Listing-only recovery witnesses natural order before
+unfinished cases become eligible. Never substitute historical discovery order.
+Observed titles and positions establish listing slots independently of hrefs.
+Unresolved destination URLs remain null, consume slots, and never enter source
+screening/extraction queues or Sheet rows. Do not associate tentative old links. A bounded candidate check may establish a
+content-confirmed source association from a saved excerpt/full text; preserve the
+listing href as unverified and checkpoint the association separately. Use saved
+links first, using the normal source/time budgets and at most one focused query
+and two candidate-source accesses per assigned card. No two-access provider cap.
+Listing captures preserve witnessed redirects/canonical URLs and their evidence.
+Fresh runs require witnessed pagination/Load More/offset continuation. A blocked
+control or repeated page closes incomplete coverage with a specific limitation,
+never invented exhaustion. Incomplete coverage is carried into report Methods.
+An exhausted six-card listing closes at six without replacement discovery.
+All prior completed records remain publishable, including records outside the
+new boundary. An unavailable or unverifiable listing pauses with a specific error.
+Final worker responses use compact completed_ids for streamed records; Python
+materializes replay caches from verified checkpoints. Actual CLI source-access
+events (including batched open_page/find_in_page/other views) enforce the existing
+source budget, with durable completed prefixes retained at bounded yields.
+
+New company runs use taxonomy-first analysis. Historical runs retain their saved
+policy and receipts; do not migrate or rerun Linkrunner as part of implementation.
 Metadata discovery defaults to 100 candidates; uncertain deep review and extraction
 remain up to 20 cases. Clearly relevant metadata goes straight to extraction.
 Actual assigned-case plus capture bytes, observed source-access attempts and wall
@@ -32,6 +60,9 @@ Production outputs use one five-column `Case studies` spreadsheet tab and five
 native document tabs: Overview, Company profiles, People, Buying situations,
 Methods & sources. The first tab is a concise one-page-style descriptive research summary, covering
 Company profiles, People involved, Buying situations and a methodological caveat.
+New Doc files and the displayed Overview use `[Company] | Working ICP`, without
+internal run IDs. Overview category frequencies use native bullets under clear
+headings with short paragraphs; the four detailed tabs retain complete analysis.
 Reports contain no target-prioritization, outreach, positioning or sales advice. After
 native report verification, the runner moves the four detailed sections into native
 tabs, verifies their text/tables, and only then trims the original tab to Overview.
@@ -55,6 +86,34 @@ report is generated and its sections supply Stages 4–7; no discarded category 
 or subsequent whole-taxonomy model reconciliation in this path.
 
 Configuration (operator commands; users can simply request changes in chat):
+- `recover-urls RUN` starts a backed-up local-only pass over existing unresolved
+  listing slots. It reuses saved URL candidates and existing evidence validators,
+  preserves completed records, respects known failures and normal review budgets,
+  and holds published Sheet/Doc identities and analysis unchanged. `run RUN`
+  continues bounded assignments; the terminal phase is `url_recovery_complete`.
+  Publication of recovered evidence requires a later explicit instruction.
+- Listing captures establish `observed_slots` independently of case checkpoints.
+  Case results may arrive out of order; missing earlier decisions still block
+  cursor advancement, and completion requires every witnessed selected slot to
+  have a recorded decision or unresolved state. Captures alone never screen cases.
+  Individual case reconciliation never completes a discovery job. Only the
+  validated bounded-unit commit does so. For unfinished listings, replay current
+  saved responses before new work; then rotate providers with saved unfinished
+  slots by their existing coverage turns. An old job status cannot close a provider
+  whose listing universe remains unfinished, and completed providers stay closed.
+  A saved blocked listing capture with no witnessed cards may close scheduling as
+  inaccessible/incomplete coverage, with unknown catalog size and explicit source
+  evidence. It never establishes an exhausted or empty catalog. No case rows or
+  screening decisions are manufactured; the limitation flows into report Methods.
+- `recover-listing-events RUN` backs up and replays saved streamed events from the
+  specific consecutive-prefix validation failure through current validators. It
+  performs no research, preserves the pause and completed records, and records
+  replay provenance. An explicitly authorized Resume then completes missing work.
+- `narrow-approval RUN --remove 'Provider A;Provider B'` corrects an approval during
+  early Stage 2 only when removed providers have no saved research/discovery
+  checkpoints and Workspace publication has not started. It backs up the run,
+  records the correction and preserves any pause. Resume remains a separate,
+  explicitly authorized recovery. Providers with saved work require universe reconciliation.
 - `configure-research RUN --discovery-batch-size 100 --review-batch-size 20`
 - `configure-research RUN --max-source-attempts 60 --max-execution-seconds 1200 --max-context-bytes 180000`
 - `configure-analysis RUN --batch-size 60 --max-input-bytes 180000 --taxonomy-input-bytes 180000 --taxonomy-max-categories 60`
@@ -96,6 +155,19 @@ the new-run policy above governs fresh runs. Exact begin/tool/ack recovery is un
    limitations. Nothing is complete until the Doc content/structure readback passes.
 
 ## Recovery and exact stop rules
+
+- Only on an explicit user decision to end research early, use
+  `finish-collected RUN --reason 'user decision' [--recovery-file FILE]`.
+  This backs up the run, validates collected records against committed receipts,
+  preserves discovery/exhaustion checkpoints, and records partial coverage.
+  The optional JSON list identifies already-observed cards by provider/position,
+  a saved candidate URL (or null), and exact saved evidence path/quote references.
+  It fits one existing review batch and permits at most one fresh recovery call;
+  interrupted work reuses receipts and leaves unfinished cards unresolved.
+  Continue `run` and the normal Workspace loop. The runner builds exact batches,
+  uses the existing Sheet identity and frozen-Sheet checks, and supplies the
+  partial-coverage disclosure to report synthesis. Future discovery policy is
+  unchanged. Quota and integrity failures still stop immediately.
 
 - Efficiency upgrades do not resume research: `upgrade-efficiency RUN` creates a
   backup, imports saved evidence/tool failures, and preserves phase, scope, jobs,
@@ -276,7 +348,7 @@ match a publication-only cleanup.
 
 `publish-synthesis RUN --backups FILE --preflight FILE` validates actual native
 backup receipts and a complete Sheet preflight, removes only inaccessible rows,
-verifies the complete publication projection, and rewrites the existing native Doc
+verifies the 467-row publication projection, and rewrites the existing native Doc
 with revision guards and compact native tables. Continue its Workspace begin/tool/
 ack loop; each ACK queues the next exact publication action. A lost destructive
 write response must be reconciled against the native file, never blindly replayed.

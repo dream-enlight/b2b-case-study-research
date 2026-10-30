@@ -1,0 +1,130 @@
+{
+  "context": {
+    "target": "example-target",
+    "task": "discover",
+    "approved_provider": "Example Automation",
+    "competing_product": {
+      "name": "Example Automation",
+      "product": "Example Process Mining",
+      "reason": "Synthetic evidence for this regression fixture.",
+      "sources": [
+        "https://product.example/overview",
+        "https://product.example/overview",
+        "https://product.example/overview"
+      ]
+    },
+    "first_listing_entries": 30,
+    "listing_contract_v2": true,
+    "listing_only": false,
+    "max_cases": 20,
+    "selected_listing_entries": [],
+    "page": 1,
+    "cursor": ""
+  },
+  "messages": [
+    {
+      "source_capture": {
+        "url": "https://automation.example/resources/automation-case-studies",
+        "role": "listing",
+        "coverage": "excerpt",
+        "text": "Synthetic source excerpt: Example Customer uses Example Process mining to understand workflows. Alex Example, Program Director, describes the implementation.",
+        "positions_verified": true,
+        "ordered_entries": [
+          {
+            "position": 1,
+            "title": "Synthetic customer story 1",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 2,
+            "title": "Synthetic customer story 2",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 3,
+            "title": "Synthetic customer story 3",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 4,
+            "title": "Synthetic customer story 4",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 5,
+            "title": "Synthetic customer story 5",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 6,
+            "title": "Synthetic customer story 6",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 7,
+            "title": "Synthetic customer story 7",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 8,
+            "title": "Synthetic customer story 8",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 9,
+            "title": "Synthetic customer story 9",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 10,
+            "title": "Synthetic customer story 10",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 11,
+            "title": "Synthetic customer story 11",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 12,
+            "title": "Synthetic customer story 12",
+            "url": null,
+            "url_status": "unresolved"
+          }
+        ],
+        "continuation": {
+          "kind": "link",
+          "target": "https://automation.example/resources/automation-case-studies/2",
+          "evidence": "Synthetic evidence for this regression fixture."
+        }
+      }
+    },
+    {
+      "discovered_case": {
+        "customer": "Example Retailer",
+        "title": "Synthetic customer story 10",
+        "url": null,
+        "decision": "unresolved",
+        "reason": "Synthetic evidence for this regression fixture.",
+        "evidence": "Synthetic evidence for this regression fixture.",
+        "record": null,
+        "reading_depth": "lightweight",
+        "contribution": "Synthetic evidence for this regression fixture.",
+        "url_status": "unresolved",
+        "listing_position": 10,
+        "listing_url": "https://automation.example/resources/automation-case-studies"
+      }
+    }
+  ]
+}

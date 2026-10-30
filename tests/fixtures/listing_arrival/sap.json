@@ -1,0 +1,260 @@
+{
+  "context": {
+    "target": "example-target",
+    "task": "discover",
+    "approved_provider": "Example Process",
+    "competing_product": {
+      "name": "Example Process",
+      "product": "Example Process Mining",
+      "reason": "Synthetic evidence for this regression fixture.",
+      "sources": [
+        "https://product.example/overview",
+        "https://product.example/overview",
+        "https://product.example/overview"
+      ]
+    },
+    "first_listing_entries": 30,
+    "listing_contract_v2": true,
+    "listing_only": false,
+    "max_cases": 20,
+    "selected_listing_entries": [],
+    "page": 1,
+    "cursor": ""
+  },
+  "messages": [
+    {
+      "source_capture": {
+        "url": "https://process.example/success-stories/",
+        "role": "listing",
+        "coverage": "excerpt",
+        "positions_verified": true,
+        "text": "Synthetic source excerpt: Example Customer uses Example Process mining to understand workflows. Alex Example, Program Director, describes the implementation.",
+        "ordered_entries": [
+          {
+            "position": 1,
+            "title": "Synthetic customer story 1",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 2,
+            "title": "Synthetic customer story 2",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 3,
+            "title": "Synthetic customer story 3",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 4,
+            "title": "Synthetic customer story 4",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 5,
+            "title": "Synthetic customer story 5",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 6,
+            "title": "Synthetic customer story 6",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 7,
+            "title": "Synthetic customer story 7",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 8,
+            "title": "Synthetic customer story 8",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 9,
+            "title": "Synthetic customer story 9",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 10,
+            "title": "Synthetic customer story 10",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 11,
+            "title": "Synthetic customer story 11",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 12,
+            "title": "Synthetic customer story 12",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 13,
+            "title": "Synthetic customer story 13",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 14,
+            "title": "Synthetic customer story 14",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 15,
+            "title": "Synthetic customer story 15",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 16,
+            "title": "Synthetic customer story 16",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 17,
+            "title": "Synthetic customer story 17",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 18,
+            "title": "Synthetic customer story 18",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 19,
+            "title": "Synthetic customer story 19",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 20,
+            "title": "Synthetic customer story 20",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 21,
+            "title": "Synthetic customer story 21",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 22,
+            "title": "Synthetic customer story 22",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 23,
+            "title": "Synthetic customer story 23",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 24,
+            "title": "Synthetic customer story 24",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 25,
+            "title": "Synthetic customer story 25",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 26,
+            "title": "Synthetic customer story 26",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 27,
+            "title": "Synthetic customer story 27",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 28,
+            "title": "Synthetic customer story 28",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 29,
+            "title": "Synthetic customer story 29",
+            "url": null,
+            "url_status": "unresolved"
+          },
+          {
+            "position": 30,
+            "title": "Synthetic customer story 30",
+            "url": null,
+            "url_status": "unresolved"
+          }
+        ],
+        "continuation": {
+          "kind": "offset",
+          "target": "https://process.example/success-stories/ offset=20",
+          "evidence": "Synthetic evidence for this regression fixture."
+        }
+      }
+    },
+    {
+      "source_capture": {
+        "url": "https://process.example/success-stories/customer/",
+        "coverage": "excerpt",
+        "text": "Synthetic customer story 10. Example Customer uses Example Process Mining to understand workflows. Alex Example, Program Director, describes implementation.",
+        "listing_association": {
+          "listing_url": "https://process.example/success-stories/",
+          "position": 10,
+          "title": "Synthetic customer story 10",
+          "quote": "Synthetic customer story 10"
+        }
+      }
+    },
+    {
+      "discovered_case": {
+        "customer": "Example Customer",
+        "title": "Synthetic customer story 10",
+        "url": "https://process.example/success-stories/customer/",
+        "decision": "relevant",
+        "reason": "Synthetic evidence for this regression fixture.",
+        "evidence": "Synthetic evidence for this regression fixture.",
+        "record": {
+          "provider": "Example Process",
+          "source_url": "https://process.example/success-stories/customer/",
+          "customer": "Example Customer",
+          "people": "Alex Example, Program Director; implementation participation; purchasing authority unknown.",
+          "company_profile": "Fictional software business.",
+          "buying_situation": "Synthetic workflow visibility problem; process mining supports monitoring.",
+          "status": "complete",
+          "note": "Synthetic evidence for this regression fixture."
+        },
+        "reading_depth": "substantive",
+        "contribution": "Synthetic evidence for this regression fixture.",
+        "url_status": "content_confirmed",
+        "listing_position": 10,
+        "listing_url": "https://process.example/success-stories/"
+      }
+    }
+  ]
+}

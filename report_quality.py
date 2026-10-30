@@ -41,12 +41,12 @@ def validate(markdown,db,aggregation,roles,*,require_overview=False):
         actual=100*expected/denominator if denominator else 0
         if not 0<=reported<=100 or abs(reported-actual)>.5*10**(-precision)+1e-7:
             raise ws.WorkspaceError(f'Report share for {label}: got {value}; expected {expected}/{denominator} ({actual:.2f}%).')
-    def count(row,index,expected):
+    def count(row,index,expected,claim_store=None):
         try:reported=int(row[index])
         except ValueError:raise ws.WorkspaceError('Invalid count for '+row[0]+': '+row[index])
         if reported!=expected:raise ws.WorkspaceError(f'Report count for {row[0]}: got {reported}; expected {expected}.')
         share(row[index+1],expected,row[0])
-        claims.setdefault(row[0],set()).add(expected)
+        (claims if claim_store is None else claim_store).setdefault(row[0],set()).add(expected)
     dims={dim:{n['name']:n for n in nodes if not n.get('parent_id')} for dim,nodes in aggregation['dimensions'].items()}
     all_dims={dim:{n['name']:n for n in nodes} for dim,nodes in aggregation['dimensions'].items()}
     def node(dim,name):
@@ -67,7 +67,10 @@ def validate(markdown,db,aggregation,roles,*,require_overview=False):
     for row in table(['Recurring situation','Business significance','Profiles']):
         name='Other' if row[0]=='Staff absence creating reporting need' else row[0]
         item=node('buying_situations',name);count(row,2,item.get('semantic_kinds',{}).get('trigger',{}).get('profile_count',0))
-    for row in table(['Deployment context','Profiles']):count(row,1,node('buying_situations',row[0])['profile_count'])
+    for row in table(['Deployment context','Profiles']):
+        item=node('buying_situations',row[0])
+        expected=item.get('semantic_kinds',{}).get('descriptive',{}).get('profile_count',0) if aggregation.get('selection_evidence_kinds') or item.get('semantic_kinds') else item['profile_count']
+        count(row,1,expected)
     capability_rows=table(['Requirement','Profiles']);seen_usage=set()
     for row in capability_rows:
         if aggregation.get('selection_evidence_kinds'):
@@ -93,14 +96,27 @@ def validate(markdown,db,aggregation,roles,*,require_overview=False):
         count(row,1,expected)
     providers=Counter(r[0].split('\n',1)[0].casefold() for r in rows)
     coverage=table(['Provider','Eligible case entries'])
-    if {r[0].casefold() for r in coverage if r[0]!='Total'}!=set(providers):raise ws.WorkspaceError('Provider coverage differs.')
+    reported_providers={r[0].casefold() for r in coverage if r[0]!='Total'}
+    known_zero_providers={p.casefold() for p,n in db.get('provider_counts',{}).items() if n==0}
+    if not set(providers)<=reported_providers<=set(providers)|known_zero_providers:raise ws.WorkspaceError('Provider coverage differs.')
     for row in coverage:
         expected=len(rows) if row[0]=='Total' else providers[row[0].casefold()]
         if int(row[1])!=expected:raise ws.WorkspaceError(f'Provider count for {row[0]}: got {row[1]}; expected {expected}.')
+    additional_claims={}
+    for header,dimension,kind in [('Operating characteristic','company_characteristics',None),('Goal','buying_situations','goal')]:
+        if any(t['rows'][0][:2]==[header,'Profiles'] for t in tables):
+            for row in table([header,'Profiles']):
+                item=node(dimension,row[0])
+                expected=item['profile_count'] if kind is None else item.get('semantic_kinds',{}).get(kind,{}).get('profile_count',0)
+                count(row,1,expected,additional_claims)
+    # Existing unqualified trigger/role/outcome claims keep their established
+    # meaning when a category also has goal or characteristic observations.
+    for label,values in additional_claims.items():claims.setdefault(label,values)
     # Machine-checkable summary claims use the same labels as the detailed
     # tables; the prose surrounding them remains free descriptive interpretation.
     overview=re.split(r'^# Company profiles\s*$',markdown,maxsplit=1,flags=re.M)[0]
     overview=re.sub(r'[*`]', '',overview)
+    overview=re.sub(r'(?m)^\s*-\s+','',overview)
     totals={'Eligible cases':len(rows),'Preserved profiles':denominator,'Providers':len(providers),
             'Inaccessible cases':db.get('inaccessible_audit_count',db.get('unavailable',0))}
     coverage_labels={'Named stakeholder profiles':'profiles_with_named_people',
@@ -111,7 +127,7 @@ def validate(markdown,db,aggregation,roles,*,require_overview=False):
             values=re.findall(re.escape(label)+r':\s*(\d+)\b',overview,re.I)
             if any(int(v)!=roles[key] for v in values):raise ws.WorkspaceError('Overview functional coverage differs: '+label)
     for label,expected in totals.items():
-        values=re.findall(re.escape(label)+r':\s*(\d+)\b',overview,re.I)
+        values=re.findall(r'(?:^|[;.!?]\s*|\n)\s*'+re.escape(label)+r':\s*(\d+)\b',overview,re.I)
         if require_overview and not values:raise ws.WorkspaceError('Overview missing verifiable coverage figure: '+label+': N.')
         if any(int(v)!=expected for v in values):raise ws.WorkspaceError(f'Overview {label}: expected {expected}; got {values}.')
     for label,n,pct in re.findall(r'(?m)(?:^|[;.!?]\s*|\n)\s*([^\n:;.!?]+):\s*(\d+)\s*\(([\d.]+%)\)',overview):

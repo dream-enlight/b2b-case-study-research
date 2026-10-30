@@ -49,3 +49,14 @@ qualified recurring patterns are encouraged; strategic recommendations are not.
 Do not impose arbitrary simplification or word-count targets. Keep the Overview
 compact and readable while allowing the detailed tabs the space their evidence
 requires. No hidden exclusions, invented statistics or inferred purchasing roles.
+
+Overview presentation: keep the internal # Overview boundary. Publication displays
+its title as [Company] | Working ICP, a descriptive working summary only. Use H2
+headings Company profiles, People involved, Buying situations and Methodological
+caveat; short explanatory paragraphs and native bullet lists for selected category
+frequencies. Write each frequency as `- Exact table label: N (P%)` on its own line,
+not a dense paragraph of semicolon-separated categories. Keep coverage concise
+using the established exact labels and verified denominators. Distinguish documented
+problems/pressures, goals, stated requirements, observed usage and later outcomes;
+usage does not establish an original buying motive. Formal roles, involvement and
+purchasing authority remain separate. Preserve full detail in the other four tabs.

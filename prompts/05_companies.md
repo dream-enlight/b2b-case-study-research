@@ -4,7 +4,7 @@ Using only the finalized Google Sheet case-study database, analyze the customer-
 
 1. Examine the customer profiles and identify the strongest recurring characteristics of companies purchasing these solutions.
 2. Write a concise description of the strongest recurring customer-company profile, explaining what these businesses do and their observed integration contexts.
-3. Classify the companies into meaningful categories based on their primary business or product. Let the categories emerge from the database rather than reusing categories from an example project.
+3. Classify the companies into meaningful categories based on their primary business or product. Let the categories emerge from the database rather than reusing predefined categories.
 4. Produce a frequency table, ordered from most to least frequent, containing:
    - Company category
    - Brief description of what companies in that category do
@@ -24,7 +24,7 @@ Using only the finalized Google Sheet case-study database, analyze the customer-
 - Do not infer employee-size ranges, revenue, funding stages or other firmographic characteristics unless the data supports them.
 - Treat frequencies as patterns among published customer cases, not as representative market statistics or proof of the optimal ICP.
 
-Use the public output contract in docs/output_contract.md for analytical depth, presentation and frequency methodology.
+Follow docs/output_contract.md for analytical depth, presentation and frequency methodology.
 
 Save this analysis separately for inclusion in the final Google Doc. Do not modify the source database or begin the people analysis.
 
